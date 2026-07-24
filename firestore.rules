@@ -62,7 +62,7 @@ service cloud.firestore {
     // Write: owner only.
 
     match /business/{businessId} {
-      allow read: if isStaffOrOwnerOrAdmin();
+      allow read: if true;
       allow create: if isSignedIn() && getRole() == "owner";
       allow update: if isOwnerOrAdmin();
       allow delete: if false;
