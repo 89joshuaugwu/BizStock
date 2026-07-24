@@ -1,0 +1,145 @@
+rules_version = '2';
+
+// ─────────────────────────────────────────────────────────────────
+// BizStock — Firestore Security Rules
+//
+// HOW TO DEPLOY: Firebase Console → your project → Build → Firestore
+// Database → Rules tab → paste this entire file → Publish.
+// (Per project convention: Firestore rules always require a manual
+// publish in the Firebase Console — this cannot be automated from code.)
+//
+// Collections:
+//   /business/{businessId}      single doc, id "main"
+//   /users/{uid}
+//   /products/{productId}
+//   /stockMovements/{movementId}
+//   /sales/{saleId}
+//   /purchases/{purchaseId}
+//   /notifications/{uid}/items/{notificationId}
+// ─────────────────────────────────────────────────────────────────
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---- Helpers ----------------------------------------------------
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function getRole() {
+      return isSignedIn() && userDoc().data.role != null ? userDoc().data.role : null;
+    }
+
+    function isActive() {
+      return isSignedIn() && userDoc().data.active == true;
+    }
+
+    function isOwner() {
+      return isSignedIn() && isActive() && getRole() == "owner";
+    }
+
+    function isStaffOrOwner() {
+      return isSignedIn() && isActive() && (getRole() == "owner" || getRole() == "staff");
+    }
+
+    // ---- /business/{businessId} --------------------------------------
+    // Single-business deployment: exactly one doc, id "main".
+    // Read: any active signed-in user (owner or staff need the business
+    //       name / default threshold for the UI).
+    // Write: owner only.
+
+    match /business/{businessId} {
+      allow read: if isStaffOrOwner();
+      allow create: if isSignedIn() && getRole() == "owner";
+      allow update: if isOwner();
+      allow delete: if false;
+    }
+
+    // ---- /users/{uid} -------------------------------------------------
+    // Read: a user can always read their own doc; the owner can read any
+    //       user's doc (needed for the Staff page list).
+    // Create: a user may create ONLY their own doc, and only as "owner"
+    //         (self-service signup is owner-only — see lib/auth.ts
+    //         signUpOwner()). Staff docs are created server-side by
+    //         /api/staff/create using firebase-admin, which bypasses
+    //         these rules entirely (Admin SDK is not subject to Security
+    //         Rules), so no client-side "create as staff" path exists.
+    // Update: owner only (role changes, active/deactivate toggle).
+    // Delete: nobody, from the client — accounts are deactivated, not
+    //         deleted, to preserve the audit trail on past sales.
+
+    match /users/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || getRole() == "owner");
+      allow create: if isSignedIn()
+                    && request.auth.uid == uid
+                    && request.resource.data.role == "owner"
+                    && request.resource.data.active == true;
+      allow update: if isOwner();
+      allow delete: if false;
+    }
+
+    // ---- /products/{productId} ----------------------------------------
+    // Read: any active signed-in user (staff need this for the Sales
+    //       screen and view-only Products page).
+    // Write (create/update/delete): owner only. Stock quantity is also
+    //       mutated by the server-side adjustStock() transaction via the
+    //       Admin SDK (sales/purchases), which bypasses these rules.
+
+    match /products/{productId} {
+      allow read: if isStaffOrOwner();
+      allow create, update, delete: if isOwner();
+    }
+
+    // ---- /stockMovements/{movementId} ----------------------------------
+    // Owner-only read (the ledger of every stock change — staff don't
+    // need this level of detail and it can reveal margins via unit cost).
+    // No client writes at all: only the server (Admin SDK, via
+    // lib/stock.ts adjustStock()) ever writes movements, inside the same
+    // transaction that adjusts the product's stock count.
+
+    match /stockMovements/{movementId} {
+      allow read: if isOwner();
+      allow write: if false;
+    }
+
+    // ---- /sales/{saleId} ------------------------------------------------
+    // Read: both roles (staff should be able to see the sales history of
+    //       what they and others have rung up).
+    // No client writes: only POST /api/sales/checkout (Admin SDK) creates
+    //       sale docs, so the price/stock logic can't be bypassed by a
+    //       client crafting a fake low total or unlimited quantity.
+
+    match /sales/{saleId} {
+      allow read: if isStaffOrOwner();
+      allow write: if false;
+    }
+
+    // ---- /purchases/{purchaseId} -----------------------------------------
+    // Owner-only read and no client writes — same reasoning as sales:
+    // only POST /api/purchases/record (Admin SDK) creates these.
+
+    match /purchases/{purchaseId} {
+      allow read: if isOwner();
+      allow write: if false;
+    }
+
+    // ---- /notifications/{uid}/items/{notificationId} ---------------------
+    // A user may only read/update their OWN notifications (marking read).
+    // No client creates: only the server (checkStockLevel() in
+    // lib/stock.ts, via Admin SDK) writes new notifications, right after
+    // a sale or purchase changes a product's stock level.
+
+    match /notifications/{ownerUid}/items/{notificationId} {
+      allow read: if isSignedIn() && request.auth.uid == ownerUid;
+      allow update: if isSignedIn()
+                    && request.auth.uid == ownerUid
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["read"]);
+      allow create, delete: if false;
+    }
+  }
+}
