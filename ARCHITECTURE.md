@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-BizStock is a single-business, two-role (owner/staff) inventory system. There is no multi-tenant selector, no organization switcher — one deployment serves one shop, matching the scope in the original brief.
+BizStock is a single-business, three-role (owner/admin/staff) inventory system. There is no multi-tenant selector, no organization switcher — one deployment serves one shop, matching the scope in the original brief. It enforce a strict single-tenant lockout so secondary signups cannot happen.
 
 Two rules shape almost every architectural decision in this codebase:
 
@@ -27,16 +27,16 @@ app/
     dashboard/
       page.tsx                 home: stat cards + recent activity
       products/page.tsx        product list (RBAC: view-only for staff)
-      products/new/page.tsx    add product (owner only)
-      products/[id]/page.tsx   edit product + stock history (owner),
+      products/new/page.tsx    add product (owner/admin)
+      products/[id]/page.tsx   edit product + stock history (owner/admin),
                                 read-only detail (staff)
-      sales/page.tsx           POS-lite sales screen (both roles)
-      sales/history/page.tsx   sales history (both roles)
-      purchases/page.tsx       record purchase (owner only)
-      purchases/history/page.tsx  purchase history (owner only)
-      reports/page.tsx         stock valuation, profit, best sellers (owner only)
-      staff/page.tsx           staff accounts (owner only)
-      settings/page.tsx        business info + password (owner only)
+      sales/page.tsx           POS-lite sales screen (all roles)
+      sales/history/page.tsx   sales history (all roles)
+      purchases/page.tsx       record purchase (owner/admin)
+      purchases/history/page.tsx  purchase history (owner/admin)
+      reports/page.tsx         stock valuation, profit, best sellers (owner/admin)
+      staff/page.tsx           staff accounts (owner/admin)
+      settings/page.tsx        business info + password (owner/admin)
   api/
     sales/checkout/route.ts    POST — atomic sale + stock deduction
     purchases/record/route.ts  POST — atomic purchase + stock addition
@@ -50,7 +50,7 @@ components/
   molecules/     ProductRow, CartItem, StockMovementRow, AlertBell
   organisms/     ProductManagementTable, ProductForm, SalesScreen,
                  PurchaseForm, ReportsDashboard, StaffManagementTable
-  shells/        PublicShell, AppShell, OwnerOnlyGuard
+  shells/        PublicShell, AppShell, OwnerOrAdminGuard
   providers/     AuthProvider (React context: firebaseUser, appUser,
                  business, role, loading)
 

@@ -54,14 +54,14 @@ Then: redirected to `/auth/login?next=/dashboard/reports`; after logging in as o
 
 ## 3. Role-based access control (RBAC)
 
-**TC-3.1 — Staff cannot see owner-only nav items**
+**TC-3.1 — Staff cannot see owner/admin nav items**
 Given: logged in as staff.
 Then: sidebar/bottom nav shows only Dashboard, Products, New Sale, Sales History. No Purchases, Reports, Staff, or Settings links anywhere in the UI.
 
-**TC-3.2 — Staff blocked from owner-only pages via direct URL**
+**TC-3.2 — Staff blocked from owner/admin pages via direct URL**
 Given: logged in as staff.
 When: navigate directly to `/dashboard/staff` (or `/purchases`, `/reports`, `/settings`, `/products/new`).
-Then: toast — "This page is only available to the business owner." Redirected to `/dashboard`. Page content is never shown, even briefly.
+Then: toast — "This page is only available to the business owner or admin." Redirected to `/dashboard`. Page content is never shown, even briefly.
 
 **TC-3.3 — Staff sees Products as read-only**
 Given: logged in as staff, on `/dashboard/products`.
@@ -72,7 +72,11 @@ Given: logged in as staff, browser dev console open.
 When: attempt `updateDoc(doc(db, "products", "<id>"), { stock: 9999 })` directly.
 Then: rejected with a Firestore `permission-denied` error (Security Rules enforce this independent of the UI).
 
-**TC-3.5 — Owner sees everything**
+**TC-3.5 — Admin sees owner/admin pages**
+Given: logged in as admin.
+Then: all nav items visible; full CRUD on Products; Purchases, Reports, Staff, Settings all accessible and functional.
+
+**TC-3.6 — Owner sees everything**
 Given: logged in as owner.
 Then: all nav items visible; full CRUD on Products; Purchases, Reports, Staff, Settings all accessible and functional.
 
@@ -200,10 +204,10 @@ Then: Profit and Units sold both show ₦0 / 0; best-sellers panel shows "No sal
 
 ## 9. Staff management
 
-**TC-9.1 — Create staff account**
+**TC-9.1 — Create staff/admin account**
 Given: owner on `/dashboard/staff`.
-When: click "Add Staff," enter name + email → submit.
-Then: modal shows the generated email + temp password; a new `/users/{uid}` doc exists with `role: "staff"`, `active: true`; a new Firebase Auth user exists.
+When: click "Add Staff," select role, enter name + email → submit.
+Then: modal shows the generated email + temp password; a new `/users/{uid}` doc exists with `role: "admin"` or `"staff"`, `active: true`; a new Firebase Auth user exists.
 
 **TC-9.2 — Duplicate staff email**
 When: create a staff account with an email that already has an account.
@@ -216,6 +220,10 @@ Then: badge changes to "Deactivated"; button changes to "Activate"; that staff m
 **TC-9.4 — Owner row has no deactivate button**
 Given: viewing the Staff list.
 Then: the owner's own row shows no Activate/Deactivate button (owners can't deactivate themselves via this UI).
+
+**TC-9.5 — Admin cannot deactivate or edit owner/admins**
+Given: logged in as admin, viewing the Staff list.
+Then: owner and admin rows show no Activate/Deactivate button. Admin can only toggle regular staff.
 
 ---
 

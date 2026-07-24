@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { format } from "date-fns";
-import { OwnerOnlyGuard } from "@/components/shells/OwnerOnlyGuard";
+import { OwnerOrAdminGuard } from "@/components/shells/OwnerOrAdminGuard";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { onPurchasesSnapshot } from "@/lib/purchases";
 import { formatNaira } from "@/lib/format";
@@ -53,7 +53,7 @@ export default function PurchaseHistoryPage() {
   ];
 
   return (
-    <OwnerOnlyGuard>
+    <OwnerOrAdminGuard>
       <div>
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-text-primary">Purchase History</h1>
@@ -73,6 +73,6 @@ export default function PurchaseHistoryPage() {
           }
         />
       </div>
-    </OwnerOnlyGuard>
+    </OwnerOrAdminGuard>
   );
 }

@@ -23,6 +23,8 @@ interface AuthContextValue {
   business: Business | null;
   loading: boolean;
   isOwner: boolean;
+  isAdmin: boolean;
+  isOwnerOrAdmin: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue>({
@@ -31,6 +33,8 @@ const AuthContext = createContext<AuthContextValue>({
   business: null,
   loading: true,
   isOwner: false,
+  isAdmin: false,
+  isOwnerOrAdmin: false,
 });
 
 export function useAuth(): AuthContextValue {
@@ -106,6 +110,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         business,
         loading: authLoading || userDocLoading,
         isOwner: appUser?.role === "owner",
+        isAdmin: appUser?.role === "admin",
+        isOwnerOrAdmin: appUser?.role === "owner" || appUser?.role === "admin",
       }}
     >
       {children}

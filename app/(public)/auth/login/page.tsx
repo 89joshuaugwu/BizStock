@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, type FormEvent } from "react";
+import { Suspense, useState, useEffect, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import toast from "react-hot-toast";
@@ -8,6 +8,7 @@ import { LogIn } from "lucide-react";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { loginWithEmail } from "@/lib/auth";
+import { checkBusinessExists } from "@/app/actions";
 
 const FIREBASE_ERROR_MESSAGES: Record<string, string> = {
   "auth/invalid-credential": "Incorrect email or password.",
@@ -71,6 +72,12 @@ function LoginForm() {
 }
 
 export default function LoginPage() {
+  const [hasBusiness, setHasBusiness] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    checkBusinessExists().then(setHasBusiness);
+  }, []);
+
   return (
     <div className="mx-auto flex min-h-[calc(100vh-8rem)] max-w-md flex-col justify-center px-4 py-12 sm:px-6">
       <div className="mb-6 flex items-center gap-2 text-violet">
@@ -87,12 +94,14 @@ export default function LoginPage() {
         <LoginForm />
       </Suspense>
 
-      <p className="mt-6 text-center text-sm text-text-secondary">
-        Setting up a new business?{" "}
-        <Link href="/auth/signup" className="font-medium text-violet hover:underline">
-          Sign up as owner
-        </Link>
-      </p>
+      {hasBusiness === false && (
+        <p className="mt-6 text-center text-sm text-text-secondary">
+          Setting up a new business?{" "}
+          <Link href="/auth/signup" className="font-medium text-violet hover:underline">
+            Sign up as owner
+          </Link>
+        </p>
+      )}
     </div>
   );
 }

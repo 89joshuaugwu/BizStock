@@ -17,7 +17,7 @@ import { formatNaira } from "@/lib/format";
 
 export default function ProductDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { isOwner } = useAuth();
+  const { isOwnerOrAdmin } = useAuth();
   const [product, setProduct] = useState<Product | null | undefined>(undefined);
   const [movements, setMovements] = useState<StockMovement[]>([]);
 
@@ -27,10 +27,10 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   }, [id]);
 
   useEffect(() => {
-    if (!isOwner) return;
+    if (!isOwnerOrAdmin) return;
     const unsub = onProductMovementsSnapshot(id, setMovements);
     return () => unsub();
-  }, [id, isOwner]);
+  }, [id, isOwnerOrAdmin]);
 
   if (product === undefined) return <FullPageSpinner />;
 
@@ -61,14 +61,14 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
-          {isOwner ? (
+          {isOwnerOrAdmin ? (
             <ProductForm product={product} />
           ) : (
             <ReadOnlyProductDetails product={product} />
           )}
         </div>
 
-        {isOwner && (
+        {isOwnerOrAdmin && (
           <Card className="h-fit">
             <CardHeader>
               <CardTitle>Stock history</CardTitle>

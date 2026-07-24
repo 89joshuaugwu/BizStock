@@ -43,8 +43,16 @@ service cloud.firestore {
       return isSignedIn() && isActive() && getRole() == "owner";
     }
 
-    function isStaffOrOwner() {
-      return isSignedIn() && isActive() && (getRole() == "owner" || getRole() == "staff");
+    function isAdmin() {
+      return isSignedIn() && isActive() && getRole() == "admin";
+    }
+
+    function isOwnerOrAdmin() {
+      return isOwner() || isAdmin();
+    }
+
+    function isStaffOrOwnerOrAdmin() {
+      return isSignedIn() && isActive() && (getRole() == "owner" || getRole() == "admin" || getRole() == "staff");
     }
 
     // ---- /business/{businessId} --------------------------------------
@@ -54,9 +62,9 @@ service cloud.firestore {
     // Write: owner only.
 
     match /business/{businessId} {
-      allow read: if isStaffOrOwner();
+      allow read: if isStaffOrOwnerOrAdmin();
       allow create: if isSignedIn() && getRole() == "owner";
-      allow update: if isOwner();
+      allow update: if isOwnerOrAdmin();
       allow delete: if false;
     }
 
@@ -74,12 +82,12 @@ service cloud.firestore {
     //         deleted, to preserve the audit trail on past sales.
 
     match /users/{uid} {
-      allow read: if isSignedIn() && (request.auth.uid == uid || getRole() == "owner");
+      allow read: if isSignedIn() && (request.auth.uid == uid || isOwnerOrAdmin());
       allow create: if isSignedIn()
                     && request.auth.uid == uid
                     && request.resource.data.role == "owner"
                     && request.resource.data.active == true;
-      allow update: if isOwner();
+      allow update: if isOwner() || (isAdmin() && resource.data.role == "staff" && request.resource.data.role == "staff");
       allow delete: if false;
     }
 
@@ -91,8 +99,8 @@ service cloud.firestore {
     //       Admin SDK (sales/purchases), which bypasses these rules.
 
     match /products/{productId} {
-      allow read: if isStaffOrOwner();
-      allow create, update, delete: if isOwner();
+      allow read: if isStaffOrOwnerOrAdmin();
+      allow create, update, delete: if isOwnerOrAdmin();
     }
 
     // ---- /stockMovements/{movementId} ----------------------------------
@@ -103,7 +111,7 @@ service cloud.firestore {
     // transaction that adjusts the product's stock count.
 
     match /stockMovements/{movementId} {
-      allow read: if isOwner();
+      allow read: if isOwnerOrAdmin();
       allow write: if false;
     }
 
@@ -115,7 +123,7 @@ service cloud.firestore {
     //       client crafting a fake low total or unlimited quantity.
 
     match /sales/{saleId} {
-      allow read: if isStaffOrOwner();
+      allow read: if isStaffOrOwnerOrAdmin();
       allow write: if false;
     }
 
@@ -124,7 +132,7 @@ service cloud.firestore {
     // only POST /api/purchases/record (Admin SDK) creates these.
 
     match /purchases/{purchaseId} {
-      allow read: if isOwner();
+      allow read: if isOwnerOrAdmin();
       allow write: if false;
     }
 

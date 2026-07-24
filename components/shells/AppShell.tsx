@@ -27,7 +27,7 @@ interface NavItem {
   href: string;
   label: string;
   icon: typeof LayoutDashboard;
-  ownerOnly?: boolean;
+  ownerOrAdminOnly?: boolean;
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -35,11 +35,11 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard/products", label: "Products", icon: Package },
   { href: "/dashboard/sales", label: "New Sale", icon: ShoppingCart },
   { href: "/dashboard/sales/history", label: "Sales History", icon: History },
-  { href: "/dashboard/purchases", label: "Purchases", icon: Truck, ownerOnly: true },
-  { href: "/dashboard/purchases/history", label: "Purchase History", icon: History, ownerOnly: true },
-  { href: "/dashboard/reports", label: "Reports", icon: BarChart3, ownerOnly: true },
-  { href: "/dashboard/staff", label: "Staff", icon: Users, ownerOnly: true },
-  { href: "/dashboard/settings", label: "Settings", icon: SettingsIcon, ownerOnly: true },
+  { href: "/dashboard/purchases", label: "Purchases", icon: Truck, ownerOrAdminOnly: true },
+  { href: "/dashboard/purchases/history", label: "Purchase History", icon: History, ownerOrAdminOnly: true },
+  { href: "/dashboard/reports", label: "Reports", icon: BarChart3, ownerOrAdminOnly: true },
+  { href: "/dashboard/staff", label: "Staff", icon: Users, ownerOrAdminOnly: true },
+  { href: "/dashboard/settings", label: "Settings", icon: SettingsIcon, ownerOrAdminOnly: true },
 ];
 
 const MOBILE_TAB_COUNT = 4;
@@ -47,11 +47,11 @@ const MOBILE_TAB_COUNT = 4;
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { appUser, business, isOwner } = useAuth();
+  const { appUser, business, isOwnerOrAdmin } = useAuth();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
 
-  const items = NAV_ITEMS.filter((item) => !item.ownerOnly || isOwner);
+  const items = NAV_ITEMS.filter((item) => !item.ownerOrAdminOnly || isOwnerOrAdmin);
   const mobileTabs = items.slice(0, MOBILE_TAB_COUNT);
   const mobileMore = items.slice(MOBILE_TAB_COUNT);
 

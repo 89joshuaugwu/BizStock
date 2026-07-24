@@ -30,11 +30,11 @@ Doc ID == Firebase Auth uid. One doc per person (owner or staff).
 | `uid` | string | duplicated from the doc ID for convenience in queries |
 | `email` | string | |
 | `displayName` | string | |
-| `role` | `"owner"` \| `"staff"` | |
+| `role` | `"owner"` \| `"admin"` \| `"staff"` | |
 | `active` | boolean | `false` = deactivated; blocks login, doesn't delete the account |
 | `createdAt` | Timestamp | |
 
-**Rules:** a user can always read their own doc; the owner can read anyone's (needed for the Staff page). Create — only your own doc, only as role `"owner"` (self-service signup path); staff docs are created server-side by `/api/staff/create` using the Admin SDK, which bypasses rules entirely. Update — owner only (role changes, the active/deactivate toggle). Delete — never.
+**Rules:** a user can always read their own doc; the owner/admin can read anyone's (needed for the Staff page). Create — only your own doc, only as role `"owner"` (self-service signup path); staff/admin docs are created server-side by `/api/staff/create` using the Admin SDK, which bypasses rules entirely. Update — owner or admin (role changes, the active/deactivate toggle). Admins can only edit regular staff users. Delete — never.
 
 ---
 
@@ -53,7 +53,7 @@ Doc ID == Firebase Auth uid. One doc per person (owner or staff).
 | `imageUrl` | string \| null | Cloudinary URL, or null if no photo uploaded |
 | `createdAt`, `updatedAt` | Timestamp | |
 
-**Rules:** read — any active signed-in user (staff need this for the Sales screen and the view-only Products page). Create/update/delete — owner only. Note: the `stock` field is also written by the server (Admin SDK, inside `adjustStock()`'s transaction) during sales/purchases — that path bypasses Security Rules by design, since the Admin SDK always does.
+**Rules:** read — any active signed-in user (staff need this for the Sales screen and the view-only Products page). Create/update/delete — owner or admin. Note: the `stock` field is also written by the server (Admin SDK, inside `adjustStock()`'s transaction) during sales/purchases — that path bypasses Security Rules by design, since the Admin SDK always does.
 
 ---
 
@@ -72,7 +72,7 @@ Append-only audit log. One doc per unit-of-stock-change event (a purchase of 50 
 | `recordedBy` | string | uid of whoever triggered it |
 | `createdAt` | Timestamp | |
 
-**Rules:** read — owner only (reveals cost prices/margins, not appropriate for staff). Write — never from the client; only `lib/stock.ts`'s `adjustStock()`, via the Admin SDK inside a transaction.
+**Rules:** read — owner or admin (reveals cost prices/margins, not appropriate for staff). Write — never from the client; only `lib/stock.ts`'s `adjustStock()`, via the Admin SDK inside a transaction.
 
 ---
 
@@ -88,7 +88,7 @@ One doc per completed checkout (which may contain multiple line items).
 | `soldByName` | string | Denormalized display name, so history pages don't need a `/users` read (which staff can't do anyway — see below) |
 | `createdAt` | Timestamp | |
 
-**Rules:** read — both owner and staff. Write — never from the client; only `POST /api/sales/checkout`, via the Admin SDK.
+**Rules:** read — all roles. Write — never from the client; only `POST /api/sales/checkout`, via the Admin SDK.
 
 ---
 
@@ -106,7 +106,7 @@ One doc per "record purchase" submission (always a single product + quantity).
 | `recordedBy`, `recordedByName` | string | |
 | `createdAt` | Timestamp | |
 
-**Rules:** read — owner only. Write — never from the client; only `POST /api/purchases/record`, via the Admin SDK.
+**Rules:** read — owner or admin. Write — never from the client; only `POST /api/purchases/record`, via the Admin SDK.
 
 ---
 

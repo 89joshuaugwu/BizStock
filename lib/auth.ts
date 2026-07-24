@@ -6,7 +6,7 @@ import {
   signOut,
   updateProfile,
 } from "firebase/auth";
-import { doc, serverTimestamp, setDoc } from "firebase/firestore";
+import { doc, serverTimestamp, setDoc, getDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import type { AppUser } from "@/types/user";
 
@@ -34,6 +34,11 @@ export interface SignUpOwnerInput {
  */
 export async function signUpOwner(input: SignUpOwnerInput): Promise<void> {
   const { businessName, ownerName, email, password } = input;
+
+  const bizSnap = await getDoc(doc(db, "business", BUSINESS_DOC_ID));
+  if (bizSnap.exists()) {
+    throw new Error("A business is already registered. This deployment only supports a single business.");
+  }
 
   const credential = await createUserWithEmailAndPassword(auth, email, password);
   const uid = credential.user.uid;

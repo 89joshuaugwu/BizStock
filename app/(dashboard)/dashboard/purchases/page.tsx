@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { OwnerOnlyGuard } from "@/components/shells/OwnerOnlyGuard";
+import { OwnerOrAdminGuard } from "@/components/shells/OwnerOrAdminGuard";
 import { PurchaseForm } from "@/components/organisms/PurchaseForm";
 import { onProductsSnapshot } from "@/lib/products";
 import type { Product } from "@/types/product";
@@ -15,7 +15,7 @@ export default function PurchasesPage() {
   }, []);
 
   return (
-    <OwnerOnlyGuard>
+    <OwnerOrAdminGuard>
       <div>
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-text-primary">Record Purchase</h1>
@@ -29,6 +29,6 @@ export default function PurchasesPage() {
           <PurchaseForm products={products} />
         )}
       </div>
-    </OwnerOnlyGuard>
+    </OwnerOrAdminGuard>
   );
 }

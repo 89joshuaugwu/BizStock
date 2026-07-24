@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from "react";
 import toast from "react-hot-toast";
 import { updatePassword } from "firebase/auth";
-import { OwnerOnlyGuard } from "@/components/shells/OwnerOnlyGuard";
+import { OwnerOrAdminGuard } from "@/components/shells/OwnerOrAdminGuard";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
@@ -13,9 +13,9 @@ import { auth } from "@/lib/firebase";
 
 export default function SettingsPage() {
   return (
-    <OwnerOnlyGuard>
+    <OwnerOrAdminGuard>
       <SettingsContent />
-    </OwnerOnlyGuard>
+    </OwnerOrAdminGuard>
   );
 }
 

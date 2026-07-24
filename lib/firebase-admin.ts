@@ -30,9 +30,14 @@ function getAdminApp(): App {
 
   const projectId = process.env.FIREBASE_ADMIN_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_ADMIN_CLIENT_EMAIL;
-  // Private keys are stored in env vars with literal "\n" sequences —
-  // they must be converted back to real newlines before use.
-  const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, "\n");
+  let privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY;
+  if (privateKey) {
+    // Strip accidental surrounding quotes from env var pasting
+    privateKey = privateKey.replace(/^["']|["']$/g, "");
+    // Private keys are stored in env vars with literal "\n" sequences —
+    // they must be converted back to real newlines before use.
+    privateKey = privateKey.replace(/\\n/g, "\n");
+  }
 
   if (!projectId || !clientEmail || !privateKey) {
     throw new Error(

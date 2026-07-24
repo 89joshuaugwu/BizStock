@@ -1,9 +1,9 @@
-import { OwnerOnlyGuard } from "@/components/shells/OwnerOnlyGuard";
+import { OwnerOrAdminGuard } from "@/components/shells/OwnerOrAdminGuard";
 import { ProductForm } from "@/components/organisms/ProductForm";
 
 export default function NewProductPage() {
   return (
-    <OwnerOnlyGuard>
+    <OwnerOrAdminGuard>
       <div>
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-text-primary">Add product</h1>
@@ -13,6 +13,6 @@ export default function NewProductPage() {
         </div>
         <ProductForm />
       </div>
-    </OwnerOnlyGuard>
+    </OwnerOrAdminGuard>
   );
 }

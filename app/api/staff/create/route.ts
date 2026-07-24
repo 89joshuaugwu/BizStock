@@ -1,12 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { Timestamp } from "firebase-admin/firestore";
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
-import { requireUser, requireOwner, ApiAuthError } from "@/lib/api-auth";
+import { requireUser, requireOwnerOrAdmin, ApiAuthError } from "@/lib/api-auth";
 
 interface CreateStaffRequest {
   name: string;
   email: string;
   tempPassword: string;
+  role?: "staff" | "admin";
 }
 
 /**
@@ -20,9 +21,14 @@ interface CreateStaffRequest {
 export async function POST(request: NextRequest) {
   try {
     const user = await requireUser(request);
-    requireOwner(user);
+    requireOwnerOrAdmin(user);
 
     const body = (await request.json()) as CreateStaffRequest;
+
+    const targetRole = body.role === "admin" ? "admin" : "staff";
+    if (targetRole === "admin" && user.role !== "owner") {
+      return NextResponse.json({ ok: false, error: "Only the business owner can create admin accounts." }, { status: 403 });
+    }
 
     if (!body.name?.trim()) {
       return NextResponse.json({ ok: false, error: "Staff name is required." }, { status: 400 });
@@ -60,17 +66,18 @@ export async function POST(request: NextRequest) {
       uid: staffUid,
       email: body.email.trim(),
       displayName: body.name.trim(),
-      role: "staff",
+      role: targetRole,
       active: true,
       createdAt: Timestamp.now(),
     });
 
     return NextResponse.json({ ok: true, uid: staffUid });
-  } catch (err) {
-    if (err instanceof ApiAuthError) {
-      return NextResponse.json({ ok: false, error: err.message }, { status: err.status });
+    } catch (err) {
+      if (err instanceof ApiAuthError) {
+        return NextResponse.json({ ok: false, error: err.message }, { status: err.status });
+      }
+      console.error("[/api/staff/create]", err);
+      const msg = err instanceof Error ? err.message : "Failed to create staff account.";
+      return NextResponse.json({ ok: false, error: msg }, { status: 500 });
     }
-    console.error("[/api/staff/create]", err);
-    return NextResponse.json({ ok: false, error: "Failed to create staff account." }, { status: 500 });
-  }
 }

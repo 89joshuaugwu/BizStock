@@ -7,26 +7,27 @@ import { useAuth } from "@/components/providers/AuthProvider";
 import { FullPageSpinner } from "@/components/ui/Spinner";
 
 /**
- * Wraps owner-only page content (Purchases, Reports, Staff, Settings, and
- * product create/edit) — per CONTEXT.md Section 4 RBAC table. Staff who
- * navigate here directly (e.g. via a saved URL) are bounced back to the
- * dashboard with a toast rather than shown a broken/empty page.
+ * Wraps owner/admin page content (Purchases, Reports, Staff, Settings, and
+ * product create/edit). Staff who navigate here directly are bounced back 
+ * to the dashboard with a toast.
  */
-export function OwnerOnlyGuard({ children }: { children: ReactNode }) {
+export function OwnerOrAdminGuard({ children }: { children: ReactNode }) {
   const { appUser, loading, isOwner } = useAuth();
   const router = useRouter();
   const hasWarned = useRef(false);
 
+  const isOwnerOrAdmin = isOwner || appUser?.role === "admin";
+
   useEffect(() => {
     if (loading || !appUser) return;
-    if (!isOwner && !hasWarned.current) {
+    if (!isOwnerOrAdmin && !hasWarned.current) {
       hasWarned.current = true;
-      toast.error("This page is only available to the business owner.");
+      toast.error("This page requires owner or admin privileges.");
       router.replace("/dashboard");
     }
-  }, [loading, appUser, isOwner, router]);
+  }, [loading, appUser, isOwnerOrAdmin, router]);
 
-  if (loading || !appUser || !isOwner) {
+  if (loading || !appUser || !isOwnerOrAdmin) {
     return <FullPageSpinner />;
   }
 

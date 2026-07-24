@@ -2,10 +2,11 @@
 
 ## 1. Roles
 
-Two roles, stored as `role` on `/users/{uid}`:
+Three roles, stored as `role` on `/users/{uid}`:
 
-- **`owner`** — exactly one per deployment (enforced by convention, not by a database constraint — see §2). Full access to everything.
-- **`staff`** — created only by the owner, from the Staff page. Can record sales and view products/prices; cannot edit products, record purchases, view reports, manage staff, or change business settings.
+- **`owner`** — exactly one per deployment. Full access to everything, including changing other user's roles.
+- **`admin`** — created by the owner. Can manage products, purchases, view reports, and create/manage regular staff. Cannot edit the owner or create other admins.
+- **`staff`** — created by the owner or admin. Can record sales and view products/prices; cannot edit products, record purchases, view reports, manage staff, or change business settings.
 
 The full RBAC matrix lives in [DATABASE.md](./DATABASE.md) (per-collection) and [PAGES.md](./PAGES.md) (per-page).
 
@@ -22,7 +23,7 @@ The full RBAC matrix lives in [DATABASE.md](./DATABASE.md) (per-collection) and 
 
 **Steps 3 and 4 run sequentially, not as a batch**, and the order matters. The Firestore rule for writing `/business/{businessId}` calls `getRole()`, which reads `/users/{uid}` — if that read happens before the user doc exists (which it would, inside an atomic batch, since rule evaluation for a batched write sees pre-batch state), the business write is rejected. Two sequential writes sidestep this entirely; there's no correctness reason they need to be atomic with each other (if step 4 fails after step 3 succeeds, the person has an owner account but no business doc yet — worst case they'd need to retry signup, which is an acceptable failure mode for a one-time setup step).
 
-There is no enforcement preventing a second person from also signing up as `"owner"` and creating a second `/business/{id}` doc under a different ID — the app just always reads/writes `/business/main`, so a second signup would silently create an orphaned document nobody ever sees. This is a deliberate non-issue for the target use case (one shop, one setup, done once) rather than a gap that needed solving.
+There is a strict single-tenant lockout in place preventing a second person from signing up as `"owner"`. The `signUpOwner()` function explicitly fails, and the UI checks if a business exists at `/business/main` to completely disable the signup process. This ensures the first person to set up the system retains exclusive ownership of the deployment.
 
 ---
 
@@ -40,17 +41,17 @@ The same deactivation check runs continuously, not just at login: `AuthProvider`
 
 ---
 
-## 4. Staff creation (`/dashboard/staff`, owner only)
+## 4. Staff/Admin creation (`/dashboard/staff`, owner or admin)
 
-Staff accounts can't self-register — there's no public staff signup route. The owner uses the "Add Staff" form, which calls `POST /api/staff/create`. This has to be a server route because creating a Firebase Auth account for someone else requires the Admin SDK (`adminAuth().createUser()`), which is never available in the browser.
+Staff accounts can't self-register — there's no public staff signup route. The owner or admin uses the "Add Staff" form, which calls `POST /api/staff/create`. This has to be a server route because creating a Firebase Auth account for someone else requires the Admin SDK (`adminAuth().createUser()`), which is never available in the browser.
 
 The route:
-1. Verifies the caller's ID token and confirms `role === "owner"` (see §6).
+1. Verifies the caller's ID token and confirms `role === "owner" || role === "admin"` (see §6).
 2. Creates the Firebase Auth user with a random temporary password.
-3. Writes their `/users/{uid}` doc with `role: "staff"`, `active: true`.
+3. Writes their `/users/{uid}` doc with `role: "staff"` (or `admin` if created by the owner), `active: true`.
 4. Returns the temp password to the owner's browser, shown once in a modal, to hand to the staff member directly (there's no email-invite flow in this build).
 
-Deactivating/reactivating staff (the toggle on the Staff page) is a direct client-side `updateDoc` on `/users/{uid}` — no API route needed, since the Firestore rule already permits the owner to write that field directly.
+Deactivating/reactivating staff (the toggle on the Staff page) is a direct client-side `updateDoc` on `/users/{uid}` — no API route needed, since the Firestore rule already permits the owner/admin to write that field directly.
 
 ---
 
@@ -74,7 +75,7 @@ Every route in `app/api/*` that mutates data starts with:
 
 ```ts
 const user = await requireUser(request);   // throws ApiAuthError if invalid/missing/inactive
-requireOwner(user);                         // throws ApiAuthError if not role === "owner" (owner-only routes)
+requireOwnerOrAdmin(user);                 // throws ApiAuthError if not authorized (owner/admin routes)
 ```
 
 `requireUser()` (`lib/api-auth.ts`):

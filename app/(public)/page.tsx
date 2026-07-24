@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { checkBusinessExists } from "@/app/actions";
 import {
   ArrowRight,
   Bell,
@@ -43,7 +44,9 @@ const features = [
   },
 ];
 
-export default function LandingPage() {
+export default async function LandingPage() {
+  const hasBusiness = await checkBusinessExists();
+
   return (
     <div>
       {/* Hero */}
@@ -64,12 +67,14 @@ export default function LandingPage() {
               worth.
             </p>
             <div className="mt-8 flex flex-wrap items-center gap-3">
-              <Link
-                href="/auth/signup"
-                className="flex h-12 items-center gap-2 rounded-lg bg-violet px-6 text-sm font-semibold text-white hover:bg-violet-dark"
-              >
-                Set up your business <ArrowRight className="h-4 w-4" />
-              </Link>
+              {!hasBusiness && (
+                <Link
+                  href="/auth/signup"
+                  className="flex h-12 items-center gap-2 rounded-lg bg-violet px-6 text-sm font-semibold text-white hover:bg-violet-dark"
+                >
+                  Set up your business <ArrowRight className="h-4 w-4" />
+                </Link>
+              )}
               <Link
                 href="/auth/login"
                 className="flex h-12 items-center rounded-lg border border-border bg-white px-6 text-sm font-semibold text-text-primary hover:bg-slate-50"
@@ -134,22 +139,24 @@ export default function LandingPage() {
       </section>
 
       {/* CTA */}
-      <section className="border-t border-border bg-violet-50/60">
-        <div className="mx-auto max-w-6xl px-4 py-16 text-center sm:px-6">
-          <h2 className="text-3xl font-bold tracking-tight text-text-primary">
-            Set up your business in under two minutes
-          </h2>
-          <p className="mx-auto mt-3 max-w-md text-text-secondary">
-            One business, one owner account, unlimited staff. No card required.
-          </p>
-          <Link
-            href="/auth/signup"
-            className="mt-7 inline-flex h-12 items-center gap-2 rounded-lg bg-violet px-7 text-sm font-semibold text-white hover:bg-violet-dark"
-          >
-            Get started free <ArrowRight className="h-4 w-4" />
-          </Link>
-        </div>
-      </section>
+      {!hasBusiness && (
+        <section className="border-t border-border bg-violet-50/60">
+          <div className="mx-auto max-w-6xl px-4 py-16 text-center sm:px-6">
+            <h2 className="text-3xl font-bold tracking-tight text-text-primary">
+              Set up your business in under two minutes
+            </h2>
+            <p className="mx-auto mt-3 max-w-md text-text-secondary">
+              One business, one owner account, unlimited staff. No card required.
+            </p>
+            <Link
+              href="/auth/signup"
+              className="mt-7 inline-flex h-12 items-center gap-2 rounded-lg bg-violet px-7 text-sm font-semibold text-white hover:bg-violet-dark"
+            >
+              Get started free <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+        </section>
+      )}
     </div>
   );
 }

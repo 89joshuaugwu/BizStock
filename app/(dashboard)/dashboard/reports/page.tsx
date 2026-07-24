@@ -1,10 +1,10 @@
-import { OwnerOnlyGuard } from "@/components/shells/OwnerOnlyGuard";
+import { OwnerOrAdminGuard } from "@/components/shells/OwnerOrAdminGuard";
 import { ReportsDashboard } from "@/components/organisms/ReportsDashboard";
 
 export default function ReportsPage() {
   return (
-    <OwnerOnlyGuard>
+    <OwnerOrAdminGuard>
       <ReportsDashboard />
-    </OwnerOnlyGuard>
+    </OwnerOrAdminGuard>
   );
 }

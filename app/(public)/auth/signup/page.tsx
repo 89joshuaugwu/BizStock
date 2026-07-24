@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState, useEffect, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
@@ -8,6 +8,7 @@ import { Store } from "lucide-react";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { signUpOwner } from "@/lib/auth";
+import { checkBusinessExists } from "@/app/actions";
 
 const FIREBASE_ERROR_MESSAGES: Record<string, string> = {
   "auth/email-already-in-use": "An account already exists with this email.",
@@ -30,6 +31,15 @@ export default function SignupPage() {
     email: "",
     password: "",
   });
+
+  useEffect(() => {
+    checkBusinessExists().then((exists) => {
+      if (exists) {
+        toast.error("A business is already registered on this system.");
+        router.push("/auth/login");
+      }
+    });
+  }, [router]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
