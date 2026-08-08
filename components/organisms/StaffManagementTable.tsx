@@ -17,7 +17,7 @@ function generateTempPassword(): string {
 }
 
 export function StaffManagementTable() {
-  const { appUser: currentUser } = useAuth();
+  const { appUser: currentUser, businessId } = useAuth();
   const [staff, setStaff] = useState<AppUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -26,15 +26,15 @@ export function StaffManagementTable() {
   const [email, setEmail] = useState("");
   const [createdCreds, setCreatedCreds] = useState<{ email: string; password: string } | null>(null);
   const [togglingUid, setTogglingUid] = useState<string | null>(null);
-  const [role, setRole] = useState<"staff" | "admin">("staff");
 
   useEffect(() => {
-    const unsub = onAllUsersSnapshot((data) => {
+    if (!businessId) return;
+    const unsub = onAllUsersSnapshot(businessId, (data) => {
       setStaff(data);
       setLoading(false);
     });
     return () => unsub();
-  }, []);
+  }, [businessId]);
 
   async function handleInvite(e: FormEvent) {
     e.preventDefault();
@@ -50,7 +50,7 @@ export function StaffManagementTable() {
       const res = await fetch("/api/staff/create", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ name: name.trim(), email: email.trim(), tempPassword, role }),
+        body: JSON.stringify({ name: name.trim(), email: email.trim(), tempPassword }),
       });
       const data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data.error ?? "Failed to create staff account.");
@@ -58,7 +58,6 @@ export function StaffManagementTable() {
       setCreatedCreds({ email: email.trim(), password: tempPassword });
       setName("");
       setEmail("");
-      setRole("staff");
       toast.success("Staff account created.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to create staff account.");
@@ -119,7 +118,7 @@ export function StaffManagementTable() {
                 >
                   {user.active ? "Active" : "Deactivated"}
                 </span>
-                {user.role !== "owner" && (currentUser?.role === "owner" || user.role === "staff") && (
+                {user.role !== "owner" && (
                   <Button
                     size="sm"
                     variant={user.active ? "danger" : "success"}
@@ -160,19 +159,6 @@ export function StaffManagementTable() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
-            {currentUser?.role === "owner" && (
-              <div className="space-y-1">
-                <label className="text-sm font-medium text-text-primary">Role</label>
-                <select
-                  value={role}
-                  onChange={(e) => setRole(e.target.value as "staff" | "admin")}
-                  className="w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-text-primary outline-none focus:border-violet focus:ring-1 focus:ring-violet"
-                >
-                  <option value="staff">Staff</option>
-                  <option value="admin">Admin</option>
-                </select>
-              </div>
-            )}
             <p className="text-xs text-text-secondary">
               A temporary password will be generated automatically — you&apos;ll see it after creating the account.
             </p>

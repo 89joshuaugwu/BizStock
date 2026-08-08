@@ -8,9 +8,10 @@ Every route in the app, who can access it, and what it does. "Both" means owner 
 
 | Route | Access | Purpose |
 |---|---|---|
-| `/` | Anyone | Landing page — hero, feature grid, CTA to sign up |
-| `/auth/signup` | Anyone | Owner-only self-service signup (business name, owner name, email, password) |
-| `/auth/login` | Anyone | Shared login for owner and staff |
+| `/` | Anyone | Landing page — hero, feature grid, CTA that opens a WhatsApp chat to request setup (no self-service signup — see ADMIN.md) |
+| `/auth/login` | Anyone | Shared login for owner and staff, across all businesses |
+
+There is no public signup route. New businesses are provisioned by the platform admin via `scripts/create-business.mjs` — see [ADMIN.md](./ADMIN.md).
 
 A signed-out visitor hitting any `/dashboard/*` URL is redirected to `/auth/login?next=<original path>` and sent back there after logging in.
 
@@ -19,49 +20,49 @@ A signed-out visitor hitting any `/dashboard/*` URL is redirected to `/auth/logi
 ## Dashboard (behind auth)
 
 ### `/dashboard` — Home
-**Access:** All roles.
-Stat cards (total products, low stock count, out-of-stock count, today's sales total). Quick-action buttons (New Sale for all; Add Product / Record Purchase for owner/admin). Recent activity feed — owner/admin sees the last 8 stock movements (purchases + sales combined, across all products); staff see the last 8 sales only (movements are owner/admin-only data, per `stockMovements`' Security Rules).
+**Access:** Both.
+Stat cards (total products, low stock count, out-of-stock count, today's sales total). Quick-action buttons (New Sale for both; Add Product / Record Purchase for owner only). Recent activity feed — owner sees the last 8 stock movements (purchases + sales combined, across all products); staff see the last 8 sales only (movements are owner-only data, per `stockMovements`' Security Rules).
 
 ### `/dashboard/products` — Products
-**Access:** All roles (owner/admin: full CRUD; staff: read-only).
-Searchable, filterable (by category) product table. Desktop: real `<table>`. Mobile: stacked cards. Owner/admin sees Edit/Delete actions and an "Add Product" button; staff see neither.
+**Access:** Both (owner: full CRUD; staff: read-only).
+Searchable, filterable (by category) product table. Desktop: real `<table>`. Mobile: stacked cards. Owner sees Edit/Delete actions and an "Add Product" button; staff see neither.
 
 ### `/dashboard/products/new` — Add Product
-**Access:** Owner or Admin (`OwnerOrAdminGuard`).
+**Access:** Owner only (`OwnerOnlyGuard`).
 Form: name, SKU, category, supplier, cost price, selling price, initial stock, reorder threshold, optional photo upload (Cloudinary).
 
 ### `/dashboard/products/[id]` — Product Detail
-**Access:** All roles, different content per role.
-- **Owner/Admin:** the same form as Add Product, pre-filled and editable, plus a stock history panel (all `stockMovements` for this product — owner/admin-only data).
+**Access:** Both, different content per role.
+- **Owner:** the same form as Add Product, pre-filled and editable, plus a stock history panel (all `stockMovements` for this product — owner-only data).
 - **Staff:** a read-only info card (SKU, category, supplier, price, stock, reorder threshold). No stock history panel, since staff can't read `stockMovements`.
 
 ### `/dashboard/sales` — New Sale
-**Access:** All roles.
+**Access:** Both.
 POS-lite screen: search a product by name/SKU, tap a result to add it to the cart, adjust quantities with +/− steppers, see a running total, tap "Complete Sale." On success, stock is deducted server-side (see `POST /api/sales/checkout`) and a sale record is created.
 
 ### `/dashboard/sales/history` — Sales History
-**Access:** All roles.
+**Access:** Both.
 Chronological list of the last 100 sales, each row expandable to show line items. Shows who sold it (`soldByName`).
 
 ### `/dashboard/purchases` — Record Purchase
-**Access:** Owner or Admin.
+**Access:** Owner only.
 Pick an existing product, enter quantity received + cost price + supplier, submit. Stock is added server-side (see `POST /api/purchases/record`).
 
 ### `/dashboard/purchases/history` — Purchase History
-**Access:** Owner or Admin.
+**Access:** Owner only.
 Sortable table of the last 100 purchases: date, product, quantity, unit cost, total, supplier, who recorded it.
 
 ### `/dashboard/reports` — Reports
-**Access:** Owner or Admin.
+**Access:** Owner only.
 Date range filter (Today / This week / This month / All time). Three stat cards: stock value at cost (+ retail value), profit for the selected period (+ margin %), units sold. A horizontal bar chart of the top 8 best-selling products by units sold in the selected period.
 
 ### `/dashboard/staff` — Staff
-**Access:** Owner or Admin.
-List of every account (owner, admin, staff) with role and active/deactivated status. "Add Staff" opens a modal to create a new staff account (email + auto-generated temp password, shown once). Owners can create Admins and Staff. Admins can only create Staff. Each non-owner row has an Activate/Deactivate toggle.
+**Access:** Owner only.
+List of every account (owner + staff) with role and active/deactivated status. "Add Staff" opens a modal to create a new staff account (email + auto-generated temp password, shown once). Each staff row has an Activate/Deactivate toggle.
 
 ### `/dashboard/settings` — Settings
-**Access:** Owner or Admin.
-Two forms: business info (name, default reorder threshold) and change password.
+**Access:** Owner only.
+Three sections: business info (name, default reorder threshold), branding (logo upload + brand color — instantly re-themes the dashboard, see ARCHITECTURE.md §5), and change password.
 
 ---
 

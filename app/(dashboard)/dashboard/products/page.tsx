@@ -7,17 +7,18 @@ import { onProductsSnapshot } from "@/lib/products";
 import type { Product } from "@/types/product";
 
 export default function ProductsPage() {
-  const { isOwner } = useAuth();
+  const { isOwner, businessId } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsub = onProductsSnapshot((data) => {
+    if (!businessId) return;
+    const unsub = onProductsSnapshot(businessId, (data) => {
       setProducts(data);
       setLoading(false);
     });
     return () => unsub();
-  }, []);
+  }, [businessId]);
 
   return (
     <div>

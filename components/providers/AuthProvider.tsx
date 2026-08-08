@@ -21,20 +21,18 @@ interface AuthContextValue {
   firebaseUser: FirebaseUser | null;
   appUser: AppUser | null;
   business: Business | null;
+  businessId: string | null;
   loading: boolean;
   isOwner: boolean;
-  isAdmin: boolean;
-  isOwnerOrAdmin: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue>({
   firebaseUser: null,
   appUser: null,
   business: null,
+  businessId: null,
   loading: true,
   isOwner: false,
-  isAdmin: false,
-  isOwnerOrAdmin: false,
 });
 
 export function useAuth(): AuthContextValue {
@@ -89,10 +87,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => unsubUser();
   }, [firebaseUser, router]);
 
+  // Business doc — depends on appUser's businessId, so it can only start
+  // once we know which business this user belongs to. `business` state
+  // is only ever set from inside the onSnapshot callback (a genuine
+  // subscription to an external system) — never synchronously in the
+  // effect body. When there's no businessId yet, we simply don't
+  // subscribe; the `resolvedBusiness` value below (used in the context)
+  // derives the "no business yet / switching accounts" case at render
+  // time instead of an explicit reset here.
   useEffect(() => {
-    const unsubBusiness = onBusinessSnapshot(setBusiness);
+    const businessId = appUser?.businessId;
+    if (!businessId) return;
+    const unsubBusiness = onBusinessSnapshot(businessId, setBusiness);
     return () => unsubBusiness();
-  }, []);
+  }, [appUser?.businessId]);
+
+  // Guards against showing a STALE business (e.g. briefly after
+  // switching accounts, before the new business's snapshot has arrived)
+  // — only expose `business` when it actually matches the current user's
+  // businessId.
+  const resolvedBusiness = business && business.id === appUser?.businessId ? business : null;
 
   // We're still "loading" the user doc if we know someone is signed in
   // but appUser hasn't caught up to that uid yet (e.g. right after
@@ -107,11 +121,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         firebaseUser,
         appUser,
-        business,
+        business: resolvedBusiness,
+        businessId: appUser?.businessId ?? null,
         loading: authLoading || userDocLoading,
         isOwner: appUser?.role === "owner",
-        isAdmin: appUser?.role === "admin",
-        isOwnerOrAdmin: appUser?.role === "owner" || appUser?.role === "admin",
       }}
     >
       {children}

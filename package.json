@@ -6,13 +6,15 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "create-business": "node scripts/create-business.mjs"
   },
   "dependencies": {
     "cloudinary": "^2.10.0",
     "date-fns": "^4.4.0",
+    "dotenv": "^17.4.2",
     "firebase": "^12.16.0",
-    "firebase-admin": "^13.1.0",
+    "firebase-admin": "^14.2.0",
     "framer-motion": "^12.42.2",
     "lucide-react": "^1.26.0",
     "next": "16.2.11",

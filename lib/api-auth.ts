@@ -54,9 +54,3 @@ export function requireOwner(user: AppUser): void {
     throw new ApiAuthError("This action is only available to the business owner.", 403);
   }
 }
-
-export function requireOwnerOrAdmin(user: AppUser): void {
-  if (user.role !== "owner" && user.role !== "admin") {
-    throw new ApiAuthError("This action requires owner or admin privileges.", 403);
-  }
-}

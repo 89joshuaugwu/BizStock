@@ -1,9 +1,9 @@
-import { OwnerOrAdminGuard } from "@/components/shells/OwnerOrAdminGuard";
+import { OwnerOnlyGuard } from "@/components/shells/OwnerOnlyGuard";
 import { StaffManagementTable } from "@/components/organisms/StaffManagementTable";
 
 export default function StaffPage() {
   return (
-    <OwnerOrAdminGuard>
+    <OwnerOnlyGuard>
       <div>
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-text-primary">Staff</h1>
@@ -14,6 +14,6 @@ export default function StaffPage() {
         </div>
         <StaffManagementTable />
       </div>
-    </OwnerOrAdminGuard>
+    </OwnerOnlyGuard>
   );
 }

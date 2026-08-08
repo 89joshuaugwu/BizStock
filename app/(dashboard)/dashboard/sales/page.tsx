@@ -2,20 +2,23 @@
 
 import { useEffect, useState } from "react";
 import { SalesScreen } from "@/components/organisms/SalesScreen";
+import { useAuth } from "@/components/providers/AuthProvider";
 import { onProductsSnapshot } from "@/lib/products";
 import type { Product } from "@/types/product";
 
 export default function SalesPage() {
+  const { businessId } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsub = onProductsSnapshot((data) => {
+    if (!businessId) return;
+    const unsub = onProductsSnapshot(businessId, (data) => {
       setProducts(data);
       setLoading(false);
     });
     return () => unsub();
-  }, []);
+  }, [businessId]);
 
   return (
     <div>

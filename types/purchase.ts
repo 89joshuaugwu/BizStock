@@ -2,6 +2,7 @@ import type { Timestamp } from "firebase/firestore";
 
 export interface Purchase {
   id: string;
+  businessId: string;
   productId: string;
   productName?: string;
   quantity: number;

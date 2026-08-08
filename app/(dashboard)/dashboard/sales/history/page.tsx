@@ -3,22 +3,25 @@
 import { useEffect, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { format } from "date-fns";
+import { useAuth } from "@/components/providers/AuthProvider";
 import { onSalesSnapshot } from "@/lib/sales";
 import { formatNaira } from "@/lib/format";
 import type { Sale } from "@/types/sale";
 
 export default function SalesHistoryPage() {
+  const { businessId } = useAuth();
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
 
   useEffect(() => {
-    const unsub = onSalesSnapshot(100, (data) => {
+    if (!businessId) return;
+    const unsub = onSalesSnapshot(businessId, 100, (data) => {
       setSales(data);
       setLoading(false);
     });
     return () => unsub();
-  }, []);
+  }, [businessId]);
 
   return (
     <div>

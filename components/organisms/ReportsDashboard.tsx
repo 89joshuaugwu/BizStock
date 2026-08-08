@@ -6,6 +6,7 @@ import { Package, TrendingUp, Wallet } from "lucide-react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Select } from "@/components/ui/Select";
 import { FullPageSpinner } from "@/components/ui/Spinner";
+import { useAuth } from "@/components/providers/AuthProvider";
 import { onProductsSnapshot } from "@/lib/products";
 import { onSalesSnapshot } from "@/lib/sales";
 import {
@@ -27,23 +28,26 @@ const RANGE_OPTIONS: { value: ReportDateRange; label: string }[] = [
 ];
 
 export function ReportsDashboard() {
+  const { businessId } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState<ReportDateRange>("month");
 
   useEffect(() => {
+    if (!businessId) return;
+
     let productsLoaded = false;
     let salesLoaded = false;
 
-    const unsubProducts = onProductsSnapshot((data) => {
+    const unsubProducts = onProductsSnapshot(businessId, (data) => {
       setProducts(data);
       productsLoaded = true;
       if (salesLoaded) setLoading(false);
     });
     // Bounded to the last 500 sales to keep report reads predictable on
     // the Spark plan — plenty for a small business's rolling reporting.
-    const unsubSales = onSalesSnapshot(500, (data) => {
+    const unsubSales = onSalesSnapshot(businessId, 500, (data) => {
       setSales(data);
       salesLoaded = true;
       if (productsLoaded) setLoading(false);
@@ -53,7 +57,7 @@ export function ReportsDashboard() {
       unsubProducts();
       unsubSales();
     };
-  }, []);
+  }, [businessId]);
 
   const productsById = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
   const rangedSales = useMemo(() => filterSalesByRange(sales, range), [sales, range]);

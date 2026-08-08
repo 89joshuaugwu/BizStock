@@ -15,26 +15,28 @@ import type { Sale } from "@/types/sale";
 import { formatNaira, formatNumber } from "@/lib/format";
 
 export default function DashboardHomePage() {
-  const { appUser, isOwner } = useAuth();
+  const { appUser, isOwner, businessId } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [movements, setMovements] = useState<StockMovement[]>([]);
   const [recentSales, setRecentSales] = useState<Sale[]>([]);
 
   useEffect(() => {
-    const unsub = onProductsSnapshot(setProducts);
+    if (!businessId) return;
+    const unsub = onProductsSnapshot(businessId, setProducts);
     return () => unsub();
-  }, []);
+  }, [businessId]);
 
   useEffect(() => {
-    if (!isOwner) return;
-    const unsub = onRecentMovementsSnapshot(8, setMovements);
+    if (!isOwner || !businessId) return;
+    const unsub = onRecentMovementsSnapshot(businessId, 8, setMovements);
     return () => unsub();
-  }, [isOwner]);
+  }, [isOwner, businessId]);
 
   useEffect(() => {
-    const unsub = onSalesSnapshot(8, setRecentSales);
+    if (!businessId) return;
+    const unsub = onSalesSnapshot(businessId, 8, setRecentSales);
     return () => unsub();
-  }, []);
+  }, [businessId]);
 
   const stats = useMemo(() => {
     const lowStock = products.filter((p) => getStockStatus(p) === "low-stock").length;

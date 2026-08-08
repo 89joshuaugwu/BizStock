@@ -6,10 +6,12 @@
  * this stack: SDK uploads have been flaky here, plain fetch() to the
  * upload endpoint is reliable. Requires an UNSIGNED upload preset
  * (Cloudinary dashboard → Settings → Upload → Add upload preset →
- * Signing Mode: Unsigned) so no server-side signing step is needed for
- * this simple single-image-per-product use case.
+ * Signing Mode: Unsigned) so no server-side signing step is needed.
+ *
+ * Generic — used for both product photos (ProductForm) and business
+ * logos (Settings page branding section).
  */
-export async function uploadProductImage(file: File): Promise<string> {
+export async function uploadImage(file: File): Promise<string> {
   const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
   const uploadPreset = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
 

@@ -1,34 +1,33 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { Timestamp } from "firebase-admin/firestore";
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
-import { requireUser, requireOwnerOrAdmin, ApiAuthError } from "@/lib/api-auth";
+import { requireUser, requireOwner, ApiAuthError } from "@/lib/api-auth";
 
 interface CreateStaffRequest {
   name: string;
   email: string;
   tempPassword: string;
-  role?: "staff" | "admin";
 }
 
 /**
- * Creates a staff account. OWNER ONLY. Mirrors PharmaLedger's attendant
- * provisioning pattern (CONTEXT.md Section 6): the Firebase Auth user and
- * the /users/{uid} Firestore doc are created together, server-side, with
+ * Creates a staff account. OWNER ONLY. The Firebase Auth user and the
+ * /users/{uid} Firestore doc are created together, server-side, with
  * firebase-admin — this can't be done from the client because staff have
- * no public signup and creating a Firebase Auth account requires elevated
- * privileges.
+ * no public signup and creating a Firebase Auth account requires
+ * elevated privileges.
+ *
+ * TENANT ISOLATION: the new staff account's businessId is ALWAYS
+ * user.businessId — the calling owner's own business, read server-side
+ * from their verified token. There is no businessId field in the request
+ * body at all, so there's no way for a client to even attempt creating
+ * staff under a different business.
  */
 export async function POST(request: NextRequest) {
   try {
     const user = await requireUser(request);
-    requireOwnerOrAdmin(user);
+    requireOwner(user);
 
     const body = (await request.json()) as CreateStaffRequest;
-
-    const targetRole = body.role === "admin" ? "admin" : "staff";
-    if (targetRole === "admin" && user.role !== "owner") {
-      return NextResponse.json({ ok: false, error: "Only the business owner can create admin accounts." }, { status: 403 });
-    }
 
     if (!body.name?.trim()) {
       return NextResponse.json({ ok: false, error: "Staff name is required." }, { status: 400 });
@@ -66,18 +65,18 @@ export async function POST(request: NextRequest) {
       uid: staffUid,
       email: body.email.trim(),
       displayName: body.name.trim(),
-      role: targetRole,
+      role: "staff",
       active: true,
+      businessId: user.businessId,
       createdAt: Timestamp.now(),
     });
 
     return NextResponse.json({ ok: true, uid: staffUid });
-    } catch (err) {
-      if (err instanceof ApiAuthError) {
-        return NextResponse.json({ ok: false, error: err.message }, { status: err.status });
-      }
-      console.error("[/api/staff/create]", err);
-      const msg = err instanceof Error ? err.message : "Failed to create staff account.";
-      return NextResponse.json({ ok: false, error: msg }, { status: 500 });
+  } catch (err) {
+    if (err instanceof ApiAuthError) {
+      return NextResponse.json({ ok: false, error: err.message }, { status: err.status });
     }
+    console.error("[/api/staff/create]", err);
+    return NextResponse.json({ ok: false, error: "Failed to create staff account." }, { status: 500 });
+  }
 }

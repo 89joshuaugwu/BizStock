@@ -2,23 +2,26 @@
 
 import { useEffect, useState } from "react";
 import { format } from "date-fns";
-import { OwnerOrAdminGuard } from "@/components/shells/OwnerOrAdminGuard";
+import { OwnerOnlyGuard } from "@/components/shells/OwnerOnlyGuard";
+import { useAuth } from "@/components/providers/AuthProvider";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { onPurchasesSnapshot } from "@/lib/purchases";
 import { formatNaira } from "@/lib/format";
 import type { Purchase } from "@/types/purchase";
 
 export default function PurchaseHistoryPage() {
+  const { businessId } = useAuth();
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsub = onPurchasesSnapshot(100, (data) => {
+    if (!businessId) return;
+    const unsub = onPurchasesSnapshot(businessId, 100, (data) => {
       setPurchases(data);
       setLoading(false);
     });
     return () => unsub();
-  }, []);
+  }, [businessId]);
 
   const columns: DataTableColumn<Purchase>[] = [
     {
@@ -53,7 +56,7 @@ export default function PurchaseHistoryPage() {
   ];
 
   return (
-    <OwnerOrAdminGuard>
+    <OwnerOnlyGuard>
       <div>
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-text-primary">Purchase History</h1>
@@ -73,6 +76,6 @@ export default function PurchaseHistoryPage() {
           }
         />
       </div>
-    </OwnerOrAdminGuard>
+    </OwnerOnlyGuard>
   );
 }

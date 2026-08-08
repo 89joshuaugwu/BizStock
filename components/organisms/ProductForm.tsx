@@ -7,7 +7,7 @@ import { ImagePlus, Loader2, X } from "lucide-react";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { createProduct, updateProduct } from "@/lib/products";
-import { uploadProductImage } from "@/lib/cloudinary";
+import { uploadImage } from "@/lib/cloudinary";
 import { useAuth } from "@/components/providers/AuthProvider";
 import type { Product, ProductInput } from "@/types/product";
 
@@ -41,7 +41,7 @@ function toFormState(product?: Product, defaultReorderThreshold?: number): FormS
 
 export function ProductForm({ product }: ProductFormProps) {
   const router = useRouter();
-  const { business } = useAuth();
+  const { business, businessId } = useAuth();
   const isEdit = !!product;
   const [form, setForm] = useState<FormState>(() => toFormState(product, business?.defaultReorderThreshold));
   const [imageUrl, setImageUrl] = useState<string | null>(product?.imageUrl ?? null);
@@ -58,7 +58,7 @@ export function ProductForm({ product }: ProductFormProps) {
 
     setUploadingImage(true);
     try {
-      const url = await uploadProductImage(file);
+      const url = await uploadImage(file);
       setImageUrl(url);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Image upload failed.");
@@ -85,7 +85,12 @@ export function ProductForm({ product }: ProductFormProps) {
       return;
     }
 
-    const input: ProductInput = {
+    if (!isEdit && !businessId) {
+      toast.error("Still loading your business — try again in a moment.");
+      return;
+    }
+
+    const commonFields = {
       name: form.name.trim(),
       sku: form.sku.trim(),
       category: form.category.trim(),
@@ -100,9 +105,13 @@ export function ProductForm({ product }: ProductFormProps) {
     setSaving(true);
     try {
       if (isEdit) {
-        await updateProduct(product.id, input);
+        // businessId is intentionally omitted from update payloads — it
+        // never changes after creation, and the update rule re-checks it
+        // stays equal to the existing value regardless.
+        await updateProduct(product.id, commonFields);
         toast.success("Product updated.");
       } else {
+        const input: ProductInput = { ...commonFields, businessId: businessId as string };
         await createProduct(input);
         toast.success("Product added.");
       }

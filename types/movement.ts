@@ -4,6 +4,7 @@ export type MovementType = "purchase" | "sale";
 
 export interface StockMovement {
   id: string;
+  businessId: string;
   productId: string;
   productName?: string;
   type: MovementType;

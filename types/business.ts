@@ -1,12 +1,21 @@
 import type { Timestamp } from "firebase/firestore";
 
-/** The single business record for this deployment. Exactly one document
- * will ever exist in the /business collection — see CONTEXT.md Section 2. */
+/**
+ * One document per client business — multi-tenant. Businesses are
+ * provisioned by the platform admin (scripts/create-business.mjs), not
+ * through public self-signup — see ADMIN.md.
+ */
 export interface Business {
   id: string;
   name: string;
   ownerUid: string;
   defaultReorderThreshold: number;
+  /** Owner-editable in Settings. Falls back to the default BizStock mark
+   * (components/ui/Logo.tsx) when null. */
+  logoUrl: string | null;
+  /** Owner-editable in Settings. Hex color, e.g. "#7C3AED". Falls back to
+   * the default Violet brand color when null. */
+  brandColor: string | null;
   createdAt: Timestamp | null;
 }
 

@@ -1,94 +1,102 @@
 # Authentication
 
-## 1. Roles
+## 1. Roles and tenancy
 
-Three roles, stored as `role` on `/users/{uid}`:
+Two roles, stored as `role` on `/users/{uid}`, alongside a `businessId` field that ties every account to exactly one business:
 
-- **`owner`** — exactly one per deployment. Full access to everything, including changing other user's roles.
-- **`admin`** — created by the owner. Can manage products, purchases, view reports, and create/manage regular staff. Cannot edit the owner or create other admins.
-- **`staff`** — created by the owner or admin. Can record sales and view products/prices; cannot edit products, record purchases, view reports, manage staff, or change business settings.
+- **`owner`** — one per business. Full access to everything within their own business.
+- **`staff`** — created only by their business's owner, from the Staff page. Can record sales and view products/prices within that business; cannot edit products, record purchases, view reports, manage staff, or change business settings.
+
+A single Firebase Auth account (one email) belongs to exactly one business, forever — there's no "switch business" flow. Someone can be staff at Business A under one email and separately own Business B under a different email; those are two entirely unrelated accounts with no data crossover (see §2 for why this is safe).
 
 The full RBAC matrix lives in [DATABASE.md](./DATABASE.md) (per-collection) and [PAGES.md](./PAGES.md) (per-page).
 
 ---
 
-## 2. Owner signup (`/auth/signup`)
+## 2. There is no public signup
 
-`lib/auth.ts` → `signUpOwner()`:
+`/auth/signup` doesn't exist in this app. New businesses are created by the platform admin, using `scripts/create-business.mjs` — see [ADMIN.md](./ADMIN.md) for the full flow. This was a deliberate design decision, not a missing feature:
 
-1. `createUserWithEmailAndPassword` — creates the Firebase Auth user.
-2. `updateProfile` — sets `displayName`.
-3. `setDoc(/users/{uid})` with `role: "owner"`, `active: true`.
-4. `setDoc(/business/main)` with the business name and default reorder threshold.
-
-**Steps 3 and 4 run sequentially, not as a batch**, and the order matters. The Firestore rule for writing `/business/{businessId}` calls `getRole()`, which reads `/users/{uid}` — if that read happens before the user doc exists (which it would, inside an atomic batch, since rule evaluation for a batched write sees pre-batch state), the business write is rejected. Two sequential writes sidestep this entirely; there's no correctness reason they need to be atomic with each other (if step 4 fails after step 3 succeeds, the person has an owner account but no business doc yet — worst case they'd need to retry signup, which is an acceptable failure mode for a one-time setup step).
-
-There is a strict single-tenant lockout in place preventing a second person from signing up as `"owner"`. The `signUpOwner()` function explicitly fails, and the UI checks if a business exists at `/business/main` to completely disable the signup process. This ensures the first person to set up the system retains exclusive ownership of the deployment.
+- Anyone who could reach a public signup route could create a business and become its owner. Multi-tenant isolation (§3 below) means that's actually *safe* in the sense that they'd only ever see their own new business's empty data — but BizStock is meant to be a service you operate for vetted clients, not an open platform, so self-serve signup doesn't fit the product even though it wouldn't be a security hole.
+- The provisioning script runs with the Firebase Admin SDK, which bypasses Firestore Security Rules entirely (same as every route in `app/api/*`) — it creates the Firebase Auth owner account, the `/business/{id}` doc, and the `/users/{uid}` doc directly, server-side, in one run.
 
 ---
 
-## 3. Login (`/auth/login`)
+## 3. Multi-tenant isolation — how a second business can't see the first
 
-Shared between owner and staff. `lib/auth.ts` → `loginWithEmail()`:
+Earlier in this project, before multi-tenancy existed, a real bug existed: business data lived at a single fixed document ID, and any new owner signup could silently overwrite it and inherit full access to the existing business's entire dataset. That's fixed now, structurally, at two independent layers:
+
+1. **Firestore Security Rules** (`firestore.rules`) — every document in `products`, `sales`, `purchases`, `stockMovements`, and `users` carries a `businessId` field. Every rule compares that field against the CALLER's own `businessId`, read fresh from their own `/users/{uid}` doc on every request. A user can never claim a different `businessId` — the rule always re-reads their real, stored value.
+2. **API routes + `lib/stock.ts`** — the Admin SDK bypasses Firestore rules entirely, so `adjustStock()` (the function that mutates stock for every sale and purchase) independently re-verifies that the target product's `businessId` matches the caller's own, INSIDE the transaction, before touching anything. This is the actual enforcement point for server-side mutations — rules alone don't cover it.
+
+See `ARCHITECTURE.md §4` for the full layer breakdown and `DATABASE.md` for the exact rule on each collection.
+
+---
+
+## 4. Login (`/auth/login`)
+
+Shared between owner and staff, across all businesses — one login page, no business selector needed (an account only ever belongs to one business). `lib/auth.ts` → `loginWithEmail()`:
 
 1. `signInWithEmailAndPassword`.
 2. Fetch `/users/{uid}`.
 3. If no user doc exists → sign out immediately, error: *"No account record found."*
 4. If `active === false` → sign out immediately, error: *"This account has been deactivated. Contact your business owner."*
-5. Otherwise, sync the session cookie (§5) and return.
+5. Otherwise, sync the session cookie (§6) and return. `AuthProvider` then resolves which business this user belongs to from their `businessId` and subscribes to that business's doc (branding, settings) — see `ARCHITECTURE.md`.
 
 The same deactivation check runs continuously, not just at login: `AuthProvider` keeps a live `onSnapshot` listener on the current user's `/users/{uid}` doc for the whole session, so if the owner deactivates a staff member who's mid-session, that staff member is signed out and redirected to `/auth/login` within moments — not just on their next login attempt.
 
 ---
 
-## 4. Staff/Admin creation (`/dashboard/staff`, owner or admin)
+## 5. Staff creation (`/dashboard/staff`, owner only)
 
-Staff accounts can't self-register — there's no public staff signup route. The owner or admin uses the "Add Staff" form, which calls `POST /api/staff/create`. This has to be a server route because creating a Firebase Auth account for someone else requires the Admin SDK (`adminAuth().createUser()`), which is never available in the browser.
+Staff accounts can't self-register — there's no public staff signup route. The owner uses the "Add Staff" form, which calls `POST /api/staff/create`. This has to be a server route because creating a Firebase Auth account for someone else requires the Admin SDK (`adminAuth().createUser()`), which is never available in the browser.
 
 The route:
-1. Verifies the caller's ID token and confirms `role === "owner" || role === "admin"` (see §6).
+1. Verifies the caller's ID token and confirms `role === "owner"` (see §7).
 2. Creates the Firebase Auth user with a random temporary password.
-3. Writes their `/users/{uid}` doc with `role: "staff"` (or `admin` if created by the owner), `active: true`.
+3. Writes their `/users/{uid}` doc with `role: "staff"`, `active: true`, and **`businessId` set to the calling owner's OWN `businessId`** — read server-side from the owner's verified token, never from anything the client sends. There is no `businessId` field anywhere in the request body, so there's no way for a client to even attempt creating staff under a different business.
 4. Returns the temp password to the owner's browser, shown once in a modal, to hand to the staff member directly (there's no email-invite flow in this build).
 
-Deactivating/reactivating staff (the toggle on the Staff page) is a direct client-side `updateDoc` on `/users/{uid}` — no API route needed, since the Firestore rule already permits the owner/admin to write that field directly.
+Deactivating/reactivating staff (the toggle on the Staff page) is a direct client-side `updateDoc` on `/users/{uid}` — no API route needed, since the Firestore rule already permits the owner to write that field, scoped to their own business's staff.
 
 ---
 
-## 5. The session cookie — what it is and, more importantly, what it isn't
+## 6. The session cookie — what it is and, more importantly, what it isn't
 
-`middleware.ts` redirects signed-out visitors away from `/dashboard/*` based on one thing: whether a `bizstock_session` cookie is present. This cookie is set client-side (`lib/auth.ts` → `syncSessionCookie()`) whenever Firebase Auth reports a signed-in user, and cleared on sign-out.
+`proxy.ts` (formerly `middleware.ts` — renamed per the Next.js 16 convention, see the comment at the top of that file) redirects signed-out visitors away from `/dashboard/*` based on one thing: whether a `bizstock_session` cookie is present. This cookie is set client-side (`lib/auth.ts` → `syncSessionCookie()`) whenever Firebase Auth reports a signed-in user, and cleared on sign-out.
 
-**This cookie carries no cryptographic weight and is checked nowhere except middleware.** It's a plain `"1"` flag, not a signed token, not verified against Firebase in any way. A person could set it manually in dev tools and still hit a `/dashboard/*` URL — they'd just see a loading spinner and then get redirected once `AuthProvider` confirms (via the real Firebase SDK) that they're not actually signed in, because every page under `(dashboard)` also runs its own client-side check (`app/(dashboard)/layout.tsx`).
+**This cookie carries no cryptographic weight and is checked nowhere except the proxy.** It's a plain `"1"` flag, not a signed token, not verified against Firebase in any way, and it says nothing about WHICH business the person belongs to. A person could set it manually in dev tools and still hit a `/dashboard/*` URL — they'd just see a loading spinner and then get redirected once `AuthProvider` confirms (via the real Firebase SDK) that they're not actually signed in, because every page under `(dashboard)` also runs its own client-side check (`app/(dashboard)/layout.tsx`).
 
 The reasons this is fine:
-- Firebase Admin SDK doesn't run in Next.js's Edge middleware runtime by default, so verifying a real ID token in `middleware.ts` isn't a lightweight option here.
-- Every actual read/write is independently protected — client reads/writes by Firestore Security Rules (evaluated on Firebase's servers against the caller's real, verified auth token), and every mutation-capable API route by `requireUser()`/`requireOwner()` in `lib/api-auth.ts`, which verifies a real Firebase ID token server-side with the Admin SDK.
+- The Firebase Admin SDK doesn't run in the Proxy runtime either, so verifying a real ID token there isn't a lightweight option.
+- Every actual read/write is independently protected — client reads/writes by Firestore Security Rules (evaluated on Firebase's servers against the caller's real, verified auth token AND their businessId), and every mutation-capable API route by `requireUser()`/`requireOwner()` in `lib/api-auth.ts`, which verifies a real Firebase ID token server-side with the Admin SDK and re-derives businessId from that user's own record.
 
-So: the cookie is UX polish (skip the flash of dashboard chrome before redirecting a logged-out visitor). Security rules and server-side token verification are the actual authorization boundary. This is called out directly in the comments at the top of `middleware.ts` and `lib/api-auth.ts`.
+So: the cookie is UX polish (skip the flash of dashboard chrome before redirecting a logged-out visitor). Security rules and server-side token verification are the actual authorization AND tenant-isolation boundary.
 
 ---
 
-## 6. How API routes verify identity
+## 7. How API routes verify identity
 
 Every route in `app/api/*` that mutates data starts with:
 
 ```ts
 const user = await requireUser(request);   // throws ApiAuthError if invalid/missing/inactive
-requireOwnerOrAdmin(user);                 // throws ApiAuthError if not authorized (owner/admin routes)
+requireOwner(user);                         // throws ApiAuthError if not role === "owner" (owner-only routes)
 ```
 
 `requireUser()` (`lib/api-auth.ts`):
 1. Reads the `Authorization: Bearer <idToken>` header.
 2. `adminAuth().verifyIdToken(idToken)` — cryptographically verifies the token against Firebase, server-side.
 3. Loads `/users/{uid}` and confirms `active === true`.
-4. Returns the full `AppUser` (with role) to the route handler.
+4. Returns the full `AppUser` (with role AND businessId) to the route handler.
 
-The client obtains that token via `auth.currentUser.getIdToken()` right before each request (see `lib/sales.ts`, `lib/purchases.ts`, and the staff-create call in `StaffManagementTable.tsx`) — a fresh, short-lived token per request, not a long-lived stored credential.
+Every route that touches a specific product (checkout, record purchase) then checks that product's `businessId` against `user.businessId` before doing anything with it — see `app/api/sales/checkout/route.ts` and `app/api/purchases/record/route.ts`.
+
+The client obtains the ID token via `auth.currentUser.getIdToken()` right before each request (see `lib/sales.ts`, `lib/purchases.ts`, and the staff-create call in `StaffManagementTable.tsx`) — a fresh, short-lived token per request, not a long-lived stored credential.
 
 ---
 
-## 7. Password changes
+## 8. Password changes
 
 Owner only, from Settings (`/dashboard/settings`), using `updatePassword()` from the Firebase client SDK directly on `auth.currentUser`. If Firebase rejects it with `auth/requires-recent-login` (the account hasn't re-authenticated recently enough for a sensitive operation), the user is told to log out and back in and try again — there's no re-authentication modal built into this version.
 

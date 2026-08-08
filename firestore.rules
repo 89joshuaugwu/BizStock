@@ -1,21 +1,42 @@
 rules_version = '2';
 
 // ─────────────────────────────────────────────────────────────────
-// BizStock — Firestore Security Rules
+// BizStock — Firestore Security Rules (multi-tenant)
 //
 // HOW TO DEPLOY: Firebase Console → your project → Build → Firestore
 // Database → Rules tab → paste this entire file → Publish.
-// (Per project convention: Firestore rules always require a manual
-// publish in the Firebase Console — this cannot be automated from code.)
+// (Firestore rules always require a manual publish — this cannot be
+// automated from code.)
+//
+// MULTI-TENANCY MODEL: every business's data lives in the SAME
+// collections as every other business's — there's no per-tenant
+// database or collection prefix. Isolation is enforced entirely by a
+// `businessId` field on every document, checked against the CALLING
+// USER's own businessId (read from their own /users/{uid} doc) on every
+// single read and write. This is Firestore's documented multi-tenancy
+// pattern: a rule that compares resource.data.businessId to a value
+// derived from one get() on the caller's own doc is provably safe for
+// Firestore to evaluate against LIST queries too, as long as the client
+// query includes a matching `where("businessId", "==", ...)` clause —
+// every lib/*.ts query in this app does exactly that.
+//
+// NEW BUSINESSES ARE NOT CREATED THROUGH THIS CLIENT PATH. Business
+// signup is closed (see AUTHENTICATION.md) — new businesses are
+// provisioned by scripts/create-business.mjs, which runs with the
+// Firebase ADMIN SDK and therefore bypasses these rules entirely, same
+// as every API route in app/api/*. The /business create rule below
+// exists purely as a defensive fallback in case that path is ever
+// exposed to the client directly — it is not the mechanism actually used
+// today.
 //
 // Collections:
-//   /business/{businessId}      single doc, id "main"
-//   /users/{uid}
-//   /products/{productId}
-//   /stockMovements/{movementId}
-//   /sales/{saleId}
-//   /purchases/{purchaseId}
-//   /notifications/{uid}/items/{notificationId}
+//   /business/{businessId}
+//   /users/{uid}                        — businessId field
+//   /products/{productId}               — businessId field
+//   /stockMovements/{movementId}        — businessId field
+//   /sales/{saleId}                     — businessId field
+//   /purchases/{purchaseId}             — businessId field
+//   /notifications/{uid}/items/{id}     — scoped by uid (1 uid = 1 business)
 // ─────────────────────────────────────────────────────────────────
 
 service cloud.firestore {
@@ -39,108 +60,125 @@ service cloud.firestore {
       return isSignedIn() && userDoc().data.active == true;
     }
 
+    // The calling user's OWN businessId, read once from their own doc.
+    // Every rule below compares against this — a user can never claim a
+    // different businessId via request data, since this always re-reads
+    // their real stored doc.
+    function myBusinessId() {
+      return userDoc().data.businessId;
+    }
+
     function isOwner() {
       return isSignedIn() && isActive() && getRole() == "owner";
     }
 
-    function isAdmin() {
-      return isSignedIn() && isActive() && getRole() == "admin";
-    }
-
-    function isOwnerOrAdmin() {
-      return isOwner() || isAdmin();
-    }
-
-    function isStaffOrOwnerOrAdmin() {
-      return isSignedIn() && isActive() && (getRole() == "owner" || getRole() == "admin" || getRole() == "staff");
+    function isStaffOrOwner() {
+      return isSignedIn() && isActive() && (getRole() == "owner" || getRole() == "staff");
     }
 
     // ---- /business/{businessId} --------------------------------------
-    // Single-business deployment: exactly one doc, id "main".
-    // Read: any active signed-in user (owner or staff need the business
-    //       name / default threshold for the UI).
-    // Write: owner only.
+    // Read: any active member (owner or staff) of THAT business.
+    // Create: defensive fallback only — see note above. Self-claiming
+    //         ownership only (ownerUid == caller); real provisioning
+    //         happens server-side via the Admin SDK, which bypasses
+    //         this rule entirely.
+    // Update: owner of that specific business only (branding, name,
+    //         default threshold — see Settings page).
+    // Delete: nobody, from the client.
 
     match /business/{businessId} {
-      allow read: if true;
-      allow create: if isSignedIn() && getRole() == "owner";
-      allow update: if isOwnerOrAdmin();
+      allow read: if isStaffOrOwner() && businessId == myBusinessId();
+      allow create: if isSignedIn() && request.resource.data.ownerUid == request.auth.uid;
+      allow update: if isOwner() && businessId == myBusinessId();
       allow delete: if false;
     }
 
     // ---- /users/{uid} -------------------------------------------------
-    // Read: a user can always read their own doc; the owner can read any
-    //       user's doc (needed for the Staff page list).
-    // Create: a user may create ONLY their own doc, and only as "owner"
-    //         (self-service signup is owner-only — see lib/auth.ts
-    //         signUpOwner()). Staff docs are created server-side by
-    //         /api/staff/create using firebase-admin, which bypasses
-    //         these rules entirely (Admin SDK is not subject to Security
-    //         Rules), so no client-side "create as staff" path exists.
-    // Update: owner only (role changes, active/deactivate toggle).
+    // Read: a user can always read their own doc; an owner can read any
+    //       user doc WITHIN THEIR OWN BUSINESS (Staff page list).
+    // Create: defensive fallback only, same reasoning as /business above
+    //         — owner accounts are actually created server-side by
+    //         scripts/create-business.mjs (Admin SDK, bypasses rules).
+    //         If this path were ever called from the client, it only
+    //         allows creating your OWN doc, as role "owner", with a
+    //         businessId pointing at a business you already own —
+    //         this closes the exact hijack hole the earlier
+    //         single-tenant version had (self-declaring "owner" of an
+    //         arbitrary/existing businessId is impossible).
+    //         Staff docs are always created server-side by
+    //         /api/staff/create using the Admin SDK, with businessId
+    //         taken from the calling owner's OWN doc — never from
+    //         client input.
+    // Update: owner only, and only within their own business (role
+    //         changes, the active/deactivate toggle).
     // Delete: nobody, from the client — accounts are deactivated, not
     //         deleted, to preserve the audit trail on past sales.
 
     match /users/{uid} {
-      allow read: if isSignedIn() && (request.auth.uid == uid || isOwnerOrAdmin());
+      allow read: if isSignedIn() && (
+        request.auth.uid == uid ||
+        (isOwner() && resource.data.businessId == myBusinessId())
+      );
       allow create: if isSignedIn()
                     && request.auth.uid == uid
                     && request.resource.data.role == "owner"
-                    && request.resource.data.active == true;
-      allow update: if isOwner() || (isAdmin() && resource.data.role == "staff" && request.resource.data.role == "staff");
+                    && request.resource.data.active == true
+                    && get(/databases/$(database)/documents/business/$(request.resource.data.businessId)).data.ownerUid == request.auth.uid;
+      allow update: if isOwner() && resource.data.businessId == myBusinessId();
       allow delete: if false;
     }
 
     // ---- /products/{productId} ----------------------------------------
-    // Read: any active signed-in user (staff need this for the Sales
-    //       screen and view-only Products page).
-    // Write (create/update/delete): owner only. Stock quantity is also
-    //       mutated by the server-side adjustStock() transaction via the
-    //       Admin SDK (sales/purchases), which bypasses these rules.
+    // Read: any active member of the SAME business.
+    // Write (create/update/delete): owner of that business only. Stock
+    //       quantity is also mutated by the server-side adjustStock()
+    //       transaction via the Admin SDK, which bypasses these rules —
+    //       the API routes independently re-verify businessId match
+    //       before touching anything (see checkout/purchase routes).
 
     match /products/{productId} {
-      allow read: if isStaffOrOwnerOrAdmin();
-      allow create, update, delete: if isOwnerOrAdmin();
+      allow read: if isStaffOrOwner() && resource.data.businessId == myBusinessId();
+      allow create: if isOwner() && request.resource.data.businessId == myBusinessId();
+      allow update: if isOwner()
+                    && resource.data.businessId == myBusinessId()
+                    && request.resource.data.businessId == myBusinessId();
+      allow delete: if isOwner() && resource.data.businessId == myBusinessId();
     }
 
     // ---- /stockMovements/{movementId} ----------------------------------
-    // Owner-only read (the ledger of every stock change — staff don't
-    // need this level of detail and it can reveal margins via unit cost).
-    // No client writes at all: only the server (Admin SDK, via
-    // lib/stock.ts adjustStock()) ever writes movements, inside the same
-    // transaction that adjusts the product's stock count.
+    // Owner-only read, scoped to their own business. No client writes at
+    // all: only the server (Admin SDK, via lib/stock.ts adjustStock())
+    // ever writes movements.
 
     match /stockMovements/{movementId} {
-      allow read: if isOwnerOrAdmin();
+      allow read: if isOwner() && resource.data.businessId == myBusinessId();
       allow write: if false;
     }
 
     // ---- /sales/{saleId} ------------------------------------------------
-    // Read: both roles (staff should be able to see the sales history of
-    //       what they and others have rung up).
-    // No client writes: only POST /api/sales/checkout (Admin SDK) creates
-    //       sale docs, so the price/stock logic can't be bypassed by a
-    //       client crafting a fake low total or unlimited quantity.
+    // Read: both roles, scoped to their own business. No client writes:
+    //       only POST /api/sales/checkout (Admin SDK) creates sale docs.
 
     match /sales/{saleId} {
-      allow read: if isStaffOrOwnerOrAdmin();
+      allow read: if isStaffOrOwner() && resource.data.businessId == myBusinessId();
       allow write: if false;
     }
 
     // ---- /purchases/{purchaseId} -----------------------------------------
-    // Owner-only read and no client writes — same reasoning as sales:
+    // Owner-only read, scoped to their own business. No client writes:
     // only POST /api/purchases/record (Admin SDK) creates these.
 
     match /purchases/{purchaseId} {
-      allow read: if isOwnerOrAdmin();
+      allow read: if isOwner() && resource.data.businessId == myBusinessId();
       allow write: if false;
     }
 
     // ---- /notifications/{uid}/items/{notificationId} ---------------------
-    // A user may only read/update their OWN notifications (marking read).
-    // No client creates: only the server (checkStockLevel() in
-    // lib/stock.ts, via Admin SDK) writes new notifications, right after
-    // a sale or purchase changes a product's stock level.
+    // A user may only read/update their OWN notifications. This is
+    // naturally tenant-isolated without needing a businessId check: each
+    // uid belongs to exactly one business, so scoping by uid already
+    // scopes by business. No client creates: only checkStockLevel() in
+    // lib/stock.ts (Admin SDK) writes new notifications.
 
     match /notifications/{ownerUid}/items/{notificationId} {
       allow read: if isSignedIn() && request.auth.uid == ownerUid;

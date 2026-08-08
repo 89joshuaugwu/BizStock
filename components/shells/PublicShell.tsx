@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Logo } from "@/components/ui/Logo";
+import { getWhatsAppLink } from "@/lib/config";
 
 export function PublicShell({ children }: { children: ReactNode }) {
   return (
@@ -18,7 +19,9 @@ export function PublicShell({ children }: { children: ReactNode }) {
               Log in
             </Link>
             <Link
-              href="/auth/signup"
+              href={getWhatsAppLink()}
+              target="_blank"
+              rel="noopener noreferrer"
               className="flex h-10 items-center rounded-lg bg-violet px-4 text-sm font-medium text-white hover:bg-violet-dark"
             >
               Get started

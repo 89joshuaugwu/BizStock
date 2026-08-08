@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -21,13 +21,14 @@ import { AlertBell } from "@/components/molecules/AlertBell";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { logout } from "@/lib/auth";
 import { cn } from "@/lib/cn";
+import { darkenHex, lightenHex } from "@/lib/color";
 import { Modal } from "@/components/ui/Modal";
 
 interface NavItem {
   href: string;
   label: string;
   icon: typeof LayoutDashboard;
-  ownerOrAdminOnly?: boolean;
+  ownerOnly?: boolean;
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -35,11 +36,11 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard/products", label: "Products", icon: Package },
   { href: "/dashboard/sales", label: "New Sale", icon: ShoppingCart },
   { href: "/dashboard/sales/history", label: "Sales History", icon: History },
-  { href: "/dashboard/purchases", label: "Purchases", icon: Truck, ownerOrAdminOnly: true },
-  { href: "/dashboard/purchases/history", label: "Purchase History", icon: History, ownerOrAdminOnly: true },
-  { href: "/dashboard/reports", label: "Reports", icon: BarChart3, ownerOrAdminOnly: true },
-  { href: "/dashboard/staff", label: "Staff", icon: Users, ownerOrAdminOnly: true },
-  { href: "/dashboard/settings", label: "Settings", icon: SettingsIcon, ownerOrAdminOnly: true },
+  { href: "/dashboard/purchases", label: "Purchases", icon: Truck, ownerOnly: true },
+  { href: "/dashboard/purchases/history", label: "Purchase History", icon: History, ownerOnly: true },
+  { href: "/dashboard/reports", label: "Reports", icon: BarChart3, ownerOnly: true },
+  { href: "/dashboard/staff", label: "Staff", icon: Users, ownerOnly: true },
+  { href: "/dashboard/settings", label: "Settings", icon: SettingsIcon, ownerOnly: true },
 ];
 
 const MOBILE_TAB_COUNT = 4;
@@ -47,11 +48,11 @@ const MOBILE_TAB_COUNT = 4;
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { appUser, business, isOwnerOrAdmin } = useAuth();
+  const { appUser, business, isOwner } = useAuth();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
 
-  const items = NAV_ITEMS.filter((item) => !item.ownerOrAdminOnly || isOwnerOrAdmin);
+  const items = NAV_ITEMS.filter((item) => !item.ownerOnly || isOwner);
   const mobileTabs = items.slice(0, MOBILE_TAB_COUNT);
   const mobileMore = items.slice(MOBILE_TAB_COUNT);
 
@@ -65,18 +66,31 @@ export function AppShell({ children }: { children: ReactNode }) {
     router.push("/auth/login");
   }
 
+  // Per-business branding: when the owner has set a brandColor (Settings
+  // → Branding), override the Violet CSS variables for this whole
+  // subtree. Every `bg-violet`, `text-violet`, etc. utility compiles to
+  // `var(--color-violet)`, so overriding the variable on this wrapper is
+  // enough to re-theme the entire dashboard without touching any
+  // individual component. Falls back to the default Violet brand
+  // (defined in app/globals.css) when no brandColor is set.
+  const brandStyle = business?.brandColor
+    ? ({
+        "--color-violet": business.brandColor,
+        "--color-violet-dark": darkenHex(business.brandColor, 0.15),
+        "--color-violet-50": lightenHex(business.brandColor, 0.95),
+        "--color-violet-100": lightenHex(business.brandColor, 0.88),
+      } as CSSProperties)
+    : undefined;
+
   return (
-    <div className="min-h-screen bg-bg">
+    <div className="min-h-screen bg-bg" style={brandStyle}>
       {/* Top bar */}
       <header className="sticky top-0 z-20 border-b border-border bg-white">
         <div className="flex h-16 items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-8">
             <Link href="/dashboard">
-              <Logo size={28} />
+              <Logo size={28} logoUrl={business?.logoUrl} wordmarkText={business?.name} />
             </Link>
-            {business && (
-              <span className="hidden text-sm text-text-secondary md:inline">{business.name}</span>
-            )}
           </div>
 
           <div className="flex items-center gap-2">

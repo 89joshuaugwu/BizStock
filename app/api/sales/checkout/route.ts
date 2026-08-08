@@ -7,14 +7,19 @@ import { requireUser, ApiAuthError } from "@/lib/api-auth";
 import type { CheckoutRequest, SaleLineItem } from "@/types/sale";
 
 /**
- * Records a sale. Both owner and staff may call this (CONTEXT.md Section 4
- * RBAC: "Record a sale" is ✅ for both roles).
+ * Records a sale. Both owner and staff may call this.
  *
- * Hard-block rule (PROMPT.md Phase 3 / CONTEXT.md Section 3): if ANY line
- * item in the cart has insufficient stock, the ENTIRE sale is rejected —
- * nothing is partially completed. We validate every line's availability
- * BEFORE calling adjustStock() on any of them, so a customer paying for 5
- * items never ends up with 4 delivered because the 5th ran out mid-checkout.
+ * Hard-block rule: if ANY line item in the cart has insufficient stock,
+ * the ENTIRE sale is rejected — nothing is partially completed. We
+ * validate every line's availability BEFORE calling adjustStock() on any
+ * of them, so a customer paying for 5 items never ends up with 4
+ * delivered because the 5th ran out mid-checkout.
+ *
+ * TENANT ISOLATION: every product fetched here is checked against
+ * user.businessId (the caller's own business, read server-side from
+ * their verified token — never trusted from the request body) before
+ * being treated as real. A productId belonging to a different business
+ * is treated exactly like a nonexistent product — see the comment below.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -46,7 +51,10 @@ export async function POST(request: NextRequest) {
       const cartItem = body.items[i];
       const snap = productSnaps[i];
 
-      if (!snap.exists) {
+      // Cross-tenant productId is treated identically to "doesn't exist"
+      // — same message, same status — so nothing about tenant boundaries
+      // is observable from the response.
+      if (!snap.exists || snap.data()?.businessId !== user.businessId) {
         return NextResponse.json(
           { ok: false, error: `Product ${cartItem.productId} no longer exists.`, productId: cartItem.productId },
           { status: 400 }
@@ -76,10 +84,10 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // All lines confirmed available — now actually deduct stock, one
-    // transaction per line item, exactly per CONTEXT.md Section 3.
-    // A second, near-simultaneous checkout racing against this one is
-    // still safe: adjustStock()'s own transaction will catch it and throw
+    // All lines confirmed available and same-tenant — now actually
+    // deduct stock, one transaction per line item. A second,
+    // near-simultaneous checkout racing against this one is still safe:
+    // adjustStock()'s own transaction will catch it and throw
     // InsufficientStockError for whichever request loses the race.
     try {
       for (const line of lineItems) {
@@ -87,6 +95,7 @@ export async function POST(request: NextRequest) {
           type: "sale",
           unitPrice: line.unitPrice,
           recordedBy: user.uid,
+          businessId: user.businessId,
         });
       }
     } catch (err) {
@@ -107,6 +116,7 @@ export async function POST(request: NextRequest) {
 
     const total = lineItems.reduce((sum, l) => sum + l.lineTotal, 0);
     const saleRef = await adminDb().collection("sales").add({
+      businessId: user.businessId,
       items: lineItems,
       total,
       soldBy: user.uid,

@@ -10,6 +10,7 @@ export interface SaleLineItem {
 
 export interface Sale {
   id: string;
+  businessId: string;
   items: SaleLineItem[];
   total: number;
   soldBy: string;

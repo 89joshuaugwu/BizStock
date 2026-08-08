@@ -1,79 +1,24 @@
 "use client";
 
-import {
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  signOut,
-  updateProfile,
-} from "firebase/auth";
-import { doc, serverTimestamp, setDoc, getDoc } from "firebase/firestore";
+import { signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import type { AppUser } from "@/types/user";
 
-/** Fixed document ID for the single business record this deployment
- * serves — see CONTEXT.md Section 2 (single-business scope, no
- * multi-tenant selector). */
-export const BUSINESS_DOC_ID = "main";
-
-export interface SignUpOwnerInput {
-  businessName: string;
-  ownerName: string;
-  email: string;
-  password: string;
-}
-
-/**
- * Owner self-service signup — DESIGN.md "Signup" section.
- *
- * Order matters here: the /users/{uid} doc must be created BEFORE the
- * /business/{businessId} doc. The Firestore rule for /business writes
- * calls getRole(), which reads /users/{uid} — if that doc doesn't exist
- * yet, the business write is denied. These cannot be batched atomically
- * for the same reason (security rules evaluate a batch against
- * pre-batch state), so they run as two sequential writes.
- */
-export async function signUpOwner(input: SignUpOwnerInput): Promise<void> {
-  const { businessName, ownerName, email, password } = input;
-
-  const bizSnap = await getDoc(doc(db, "business", BUSINESS_DOC_ID));
-  if (bizSnap.exists()) {
-    throw new Error("A business is already registered. This deployment only supports a single business.");
-  }
-
-  const credential = await createUserWithEmailAndPassword(auth, email, password);
-  const uid = credential.user.uid;
-
-  await updateProfile(credential.user, { displayName: ownerName });
-
-  await setDoc(doc(db, "users", uid), {
-    uid,
-    email,
-    displayName: ownerName,
-    role: "owner",
-    active: true,
-    createdAt: serverTimestamp(),
-  });
-
-  await setDoc(doc(db, "business", BUSINESS_DOC_ID), {
-    name: businessName,
-    ownerUid: uid,
-    defaultReorderThreshold: 10,
-    createdAt: serverTimestamp(),
-  });
-
-  await syncSessionCookie();
-}
-
 /**
  * Shared login for both owner and staff. If the account has been
- * deactivated (active: false), sign out immediately with a clear message
- * — same pattern as PharmaLedger's attendant login guard.
+ * deactivated (active: false), sign out immediately with a clear message.
+ *
+ * NOTE: there is no client-side signup function in this file. Business
+ * signup is closed — new businesses (and their owner account) are
+ * provisioned by `scripts/create-business.mjs`, run by the platform
+ * admin, using the Firebase Admin SDK. See ADMIN.md and
+ * AUTHENTICATION.md for why, and for the full provisioning flow.
  */
 export async function loginWithEmail(email: string, password: string): Promise<AppUser> {
   const credential = await signInWithEmailAndPassword(auth, email, password);
 
-  const { getDoc, doc: docRef } = await import("firebase/firestore");
-  const userSnap = await getDoc(docRef(db, "users", credential.user.uid));
+  const userSnap = await getDoc(doc(db, "users", credential.user.uid));
 
   if (!userSnap.exists()) {
     await signOut(auth);
@@ -104,8 +49,9 @@ export async function logout(): Promise<void> {
  * UX-level route redirects (bounce signed-out visitors away from
  * /dashboard/* to /auth/login). This cookie is NOT treated as a trust
  * boundary anywhere — real authorization is enforced by Firestore
- * Security Rules (client reads/writes) and by verifying the Firebase ID
- * token server-side with firebase-admin in every API route (writes).
+ * Security Rules (client reads/writes, scoped by businessId — see
+ * firestore.rules) and by verifying the Firebase ID token server-side
+ * with firebase-admin in every API route (writes).
  */
 export async function syncSessionCookie(): Promise<void> {
   if (typeof document === "undefined") return;

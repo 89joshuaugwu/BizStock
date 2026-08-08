@@ -1,21 +1,24 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { OwnerOrAdminGuard } from "@/components/shells/OwnerOrAdminGuard";
+import { OwnerOnlyGuard } from "@/components/shells/OwnerOnlyGuard";
+import { useAuth } from "@/components/providers/AuthProvider";
 import { PurchaseForm } from "@/components/organisms/PurchaseForm";
 import { onProductsSnapshot } from "@/lib/products";
 import type { Product } from "@/types/product";
 
 export default function PurchasesPage() {
+  const { businessId } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
 
   useEffect(() => {
-    const unsub = onProductsSnapshot(setProducts);
+    if (!businessId) return;
+    const unsub = onProductsSnapshot(businessId, setProducts);
     return () => unsub();
-  }, []);
+  }, [businessId]);
 
   return (
-    <OwnerOrAdminGuard>
+    <OwnerOnlyGuard>
       <div>
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-text-primary">Record Purchase</h1>
@@ -29,6 +32,6 @@ export default function PurchasesPage() {
           <PurchaseForm products={products} />
         )}
       </div>
-    </OwnerOrAdminGuard>
+    </OwnerOnlyGuard>
   );
 }
