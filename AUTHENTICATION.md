@@ -15,10 +15,10 @@ The full RBAC matrix lives in [DATABASE.md](./DATABASE.md) (per-collection) and 
 
 ## 2. There is no public signup
 
-`/auth/signup` doesn't exist in this app. New businesses are created by the platform admin, using `scripts/create-business.mjs` — see [ADMIN.md](./ADMIN.md) for the full flow. This was a deliberate design decision, not a missing feature:
+`/auth/signup` doesn't exist in this app. New businesses are created, edited, and deleted by the platform admin, using the admin panel at `/admin` — see [ADMIN.md](./ADMIN.md) for the full flow (`scripts/create-business.mjs` still works too, as a creation-only fallback that doesn't depend on the app being deployed). This was a deliberate design decision, not a missing feature:
 
 - Anyone who could reach a public signup route could create a business and become its owner. Multi-tenant isolation (§3 below) means that's actually *safe* in the sense that they'd only ever see their own new business's empty data — but BizStock is meant to be a service you operate for vetted clients, not an open platform, so self-serve signup doesn't fit the product even though it wouldn't be a security hole.
-- The provisioning script runs with the Firebase Admin SDK, which bypasses Firestore Security Rules entirely (same as every route in `app/api/*`) — it creates the Firebase Auth owner account, the `/business/{id}` doc, and the `/users/{uid}` doc directly, server-side, in one run.
+- Both the admin panel and the CLI script run with the Firebase Admin SDK, which bypasses Firestore Security Rules entirely (same as every route in `app/api/*`) — they create the Firebase Auth owner account, the `/business/{id}` doc, and the `/users/{uid}` doc directly, server-side, in one operation.
 
 ---
 
@@ -101,3 +101,18 @@ The client obtains the ID token via `auth.currentUser.getIdToken()` right before
 Owner only, from Settings (`/dashboard/settings`), using `updatePassword()` from the Firebase client SDK directly on `auth.currentUser`. If Firebase rejects it with `auth/requires-recent-login` (the account hasn't re-authenticated recently enough for a sensitive operation), the user is told to log out and back in and try again — there's no re-authentication modal built into this version.
 
 Staff password changes aren't exposed in this build; if a staff member needs a new password, the owner would need to be given a "reset staff password" capability in a future iteration (not currently built).
+
+---
+
+## 9. Admin auth (`/admin`) — a completely separate system
+
+Everything above this section describes the owner/staff model: Firebase Auth accounts, `/users/{uid}` docs with a `role` and a `businessId`, Firestore Security Rules that scope every read/write to one business. The admin panel at `/admin` does NOT use any of that.
+
+Instead:
+
+- There is exactly one admin identity: whoever knows `ADMIN_PASSWORD` (an env var — see `.env.local.example`). No Firebase Auth account, no `/users/{uid}` doc, no `businessId`.
+- Logging in at `/admin/login` POSTs the password to `/api/admin/login`, which compares it (via a timing-safe comparison, `lib/admin-auth.ts`) and, if correct, sets a signed session cookie (`bizstock_admin_session`) — an HMAC-signed, self-expiring token, not a database-backed session.
+- `app/admin/(protected)/layout.tsx` verifies that cookie server-side, cryptographically, on every request to any admin page — a REAL check, unlike the `/dashboard/*` guard in `proxy.ts` (§6), which only checks cookie *presence* because real dashboard auth depends on the Firebase client SDK and can't be verified synchronously in that runtime. Admin auth has no such constraint, so it gets the stronger check.
+- Every `/api/admin/*` route calls `requireAdminSession()` before doing anything, same pattern as `requireUser()`/`requireOwner()` for the tenant-scoped routes, just checking a completely different, unrelated credential.
+
+**Why not just make "admin" a role on a `/users/{uid}` doc?** Because that would mean giving one Firebase Auth account a `businessId`-less identity that every Firestore rule and every tenant-scoped API route would need to special-case ("...unless this user is a platform admin, in which case ignore the businessId check"). That's real new complexity injected into the exact rules that are otherwise the entire enforcement mechanism for tenant isolation (see §3) — and it means admin capability becomes reachable through the same login flow, session model, and attack surface as every regular business account. Keeping admin auth as a separate, parallel system means it can be reasoned about independently: nothing about `/admin` existing changes what a compromised owner or staff account could do, and nothing about the owner/staff Security Rules had to change to support it. See ARCHITECTURE.md §11 for more.

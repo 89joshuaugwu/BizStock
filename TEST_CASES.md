@@ -6,7 +6,7 @@ Legend: **Given** = starting state, **When** = action, **Then** = expected resul
 
 ---
 
-## 1. Business provisioning (admin script)
+## 1. Business provisioning (CLI script)
 
 **TC-1.1 — Successful provisioning**
 Given: `node scripts/create-business.mjs` run from the project root, `.env.local` filled in.
@@ -29,7 +29,7 @@ Then: succeeds; lands on `/dashboard`; header shows their business name (or "Biz
 
 **TC-1.5 — No public signup route exists**
 When: navigate to `/auth/signup`.
-Then: 404 — the route does not exist. There is no way to create a business except the admin script.
+Then: 404 — the route does not exist. The CLI script and the `/admin` panel (§13) are the only two ways to create a business — there is no public path.
 
 ---
 
@@ -291,6 +291,9 @@ Then: toast — "Brand color must be a hex code like #7C3AED." Not saved.
 **TC-11.7 — Clearing branding reverts to defaults**
 When: remove the logo and clear the brand color field → Save branding.
 Then: dashboard reverts to the default BizStock mark and default Violet color.
+
+---
+
 ## 12. Cross-cutting
 
 **TC-12.1 — Mobile layout**
@@ -303,3 +306,66 @@ Then: it appears in tab B's list within moments, with no manual refresh.
 
 **TC-12.3 — Currency formatting**
 Verify all money values app-wide are formatted as Nigerian Naira (`₦`) with tabular numerals, via `formatNaira()` — check sales cart totals, reports, purchase form total, and history tables.
+
+---
+
+## 13. Admin panel (`/admin`)
+
+The admin panel is a completely separate authentication system from everything above (see AUTHENTICATION.md §9) — these cases specifically verify that separation holds, in addition to the create/edit/delete/config functionality itself.
+
+**TC-13.1 — Admin login with correct password**
+Given: `ADMIN_PASSWORD` and `ADMIN_SESSION_SECRET` set in `.env.local`.
+When: enter the correct password at `/admin/login`.
+Then: redirected to `/admin`; business list loads.
+
+**TC-13.2 — Admin login with wrong password**
+When: enter an incorrect password.
+Then: toast — "Incorrect password." Not redirected; no session cookie set.
+
+**TC-13.3 — Unauthenticated visitor blocked from `/admin`**
+Given: no admin session cookie.
+When: navigate directly to `/admin`.
+Then: server-side redirect to `/admin/login` — verify this happens even with JavaScript disabled or via a raw `curl` request (this is a real server-side check, not a client-side one — see ARCHITECTURE.md §11).
+
+**TC-13.4 — Business owner/staff credentials do NOT work as admin login**
+Given: a valid business owner's email + password from `/auth/login`.
+When: try entering that same password at `/admin/login`.
+Then: rejected — "Incorrect password." (Admin auth has nothing to do with any business account or Firebase Auth at all — this confirms the two systems are genuinely unrelated, not just presented separately.)
+
+**TC-13.5 — Admin session does not grant dashboard access, and vice versa**
+Given: logged in as admin only (no business account session).
+When: navigate to `/dashboard`.
+Then: redirected to `/auth/login` — the admin session cookie is a different cookie entirely and confers no access to any business's dashboard.
+
+**TC-13.6 — Create a business from the panel**
+When: click "Create business," fill in name/owner name/owner email, optionally set branding, submit.
+Then: credentials modal shows the owner's email + a generated temp password; the business appears in the list immediately after closing the modal; `/business/{id}`, `/users/{ownerUid}` created correctly (same checks as TC-1.1).
+
+**TC-13.7 — Edit a business's branding and threshold**
+When: click Edit on a business, change the name, upload a new logo, change the brand color, change the threshold, save.
+Then: toast success; list view reflects the new name/logo/color immediately; the business's own dashboard (logged in separately as that owner) shows the updated branding on next load.
+
+**TC-13.8 — Deactivate an owner from the edit modal**
+When: toggle "Owner account active" off, save.
+Then: `/users/{ownerUid}.active` becomes `false` AND the Firebase Auth account becomes disabled (verify in Firebase Console → Authentication). If that owner is logged in elsewhere, they're signed out within moments (same live-listener behavior as TC-2.4). They cannot log back in until reactivated.
+
+**TC-13.9 — Delete requires typing the exact business name**
+When: click Delete on a business, then try clicking "Delete permanently" with the confirmation field empty or containing the wrong text.
+Then: the delete button stays disabled — the request is never sent.
+
+**TC-13.10 — Delete cascades completely**
+Given: a test business with at least one product, one sale, one purchase, and one staff account.
+When: type the exact business name and confirm delete.
+Then: success toast shows non-zero counts for products/sales/purchases; `/business/{id}` no longer exists; querying `products`/`sales`/`purchases`/`stockMovements` for that `businessId` returns nothing; the owner's and staff's `/users/{uid}` docs are gone; their Firebase Auth accounts no longer exist (Console → Authentication); their `/notifications/{uid}/items` subcollections are gone.
+
+**TC-13.11 — Contact number update reflects on public pages**
+When: change the WhatsApp number in the admin panel's Contact card, save.
+Then: reload the (logged-out) landing page and login page — the "Get started" / "Get in touch" links now point to the new number (verify by inspecting the `href`, which should contain the new digits).
+
+**TC-13.12 — Invalid contact number rejected**
+When: enter a number containing letters or a `+` prefix, save.
+Then: toast error naming the expected format; not saved.
+
+**TC-13.13 — Admin logout**
+When: click "Log out" in the admin header.
+Then: session cookie cleared; navigating to `/admin` afterward redirects to `/admin/login` again.

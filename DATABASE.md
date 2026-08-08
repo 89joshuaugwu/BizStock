@@ -6,7 +6,7 @@ BizStock uses **Firestore only** (Spark/free plan), and is **multi-tenant**: eve
 
 ## Multi-tenancy in one paragraph
 
-Every document below (except `/notifications`, which is scoped by `uid` instead) carries a `businessId` field pointing at the `/business/{id}` doc it belongs to. Every Firestore Security Rule checks that field against the CALLING USER's own `businessId` (read fresh from their own `/users/{uid}` doc — never from client-supplied data). Every client query filters `where("businessId", "==", currentBusinessId)` — this is what makes those queries provably safe for Firestore to evaluate under its list-query rules. Every server-side write (via the Admin SDK, which bypasses Security Rules) independently re-verifies the `businessId` match before touching anything — see `lib/stock.ts`.
+Every document below (except `/notifications`, which is scoped by `uid` instead, and `/platformConfig`, which is platform-wide and never touched by the client SDK at all) carries a `businessId` field pointing at the `/business/{id}` doc it belongs to. Every Firestore Security Rule checks that field against the CALLING USER's own `businessId` (read fresh from their own `/users/{uid}` doc — never from client-supplied data). Every client query filters `where("businessId", "==", currentBusinessId)` — this is what makes those queries provably safe for Firestore to evaluate under its list-query rules. Every server-side write (via the Admin SDK, which bypasses Security Rules) independently re-verifies the `businessId` match before touching anything — see `lib/stock.ts`.
 
 ---
 
@@ -137,6 +137,19 @@ Subcollection per user — the one collection that does NOT need an explicit `bu
 | `createdAt` | Timestamp | |
 
 **Rules:** a user may only read/update their own subcollection, and update is restricted to changing only the `read` field. Create/delete — never from the client; only `checkStockLevel()` in `lib/stock.ts`, via the Admin SDK, right after a stock-changing transaction commits.
+
+---
+
+### `/platformConfig/main`
+
+Single document, platform-wide (not scoped to any business) — currently just the public WhatsApp contact info, editable from `/admin`.
+
+| Field | Type | Notes |
+|---|---|---|
+| `whatsappNumber` | string | Digits only, international format, no `+` or spaces |
+| `whatsappMessage` | string | Pre-filled message text for the `wa.me` link |
+
+**Rules:** `allow read, write: if false` — deny-all for the client Firestore SDK, unconditionally. This isn't the actual enforcement mechanism (nothing legitimate ever reads/writes this collection through the client SDK in the first place — see `lib/platform-config.ts`, which uses the Admin SDK exclusively, from Server Components and from `/api/admin/config`), it's defense in depth in case that ever changes. If the doc doesn't exist yet, `getPlatformConfigServer()` falls back to the static defaults in `lib/config.ts`.
 
 ---
 

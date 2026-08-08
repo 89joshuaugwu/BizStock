@@ -1,15 +1,20 @@
 /**
- * Platform-level config for whoever operates this BizStock deployment
- * (i.e. the person running scripts/create-business.mjs for clients).
- * Edit these two values for your own deployment — everything else in the
- * app reads from here rather than hardcoding contact info in multiple
- * places.
+ * Static fallback platform contact info — used only until an admin sets
+ * a real value via /admin (stored in Firestore, see
+ * lib/platform-config.ts). Also the seed values shown pre-filled the
+ * first time /admin's contact form loads.
  */
 export const PLATFORM_CONTACT = {
   whatsappNumber: "2348161780381", // international format, no "+", no spaces
   whatsappMessage: "Hi, I'd like to set up BizStock for my business.",
 };
 
-export function getWhatsAppLink(message = PLATFORM_CONTACT.whatsappMessage): string {
-  return `https://wa.me/${PLATFORM_CONTACT.whatsappNumber}?text=${encodeURIComponent(message)}`;
+/** Pure URL builder — safe to call from client or server code. Pass the
+ * resolved values (from getPlatformConfigServer() or the /api/platform-config
+ * fetch) rather than relying on the static defaults, wherever possible. */
+export function getWhatsAppLink(
+  number: string = PLATFORM_CONTACT.whatsappNumber,
+  message: string = PLATFORM_CONTACT.whatsappMessage
+): string {
+  return `https://wa.me/${number}?text=${encodeURIComponent(message)}`;
 }

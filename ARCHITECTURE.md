@@ -38,10 +38,22 @@ app/
       reports/page.tsx         stock valuation, profit, best sellers (owner only)
       staff/page.tsx           staff accounts (owner only)
       settings/page.tsx        business info + branding + password (owner only)
+  admin/                       platform admin — separate auth entirely, see §11
+    login/page.tsx              password form (public)
+    (protected)/
+      layout.tsx                 REAL server-side session check (not just
+                                  cookie presence — see §11)
+      page.tsx                   business list + create/edit/delete +
+                                  contact number editor
   api/
     sales/checkout/route.ts    POST — atomic sale + stock deduction
     purchases/record/route.ts  POST — atomic purchase + stock addition
     staff/create/route.ts      POST — create staff Auth user + user doc
+    admin/login/route.ts        POST — verify admin password, set session
+    admin/logout/route.ts       POST — clear admin session
+    admin/businesses/route.ts   GET list, POST create
+    admin/businesses/[id]/route.ts   PATCH edit, DELETE cascade
+    admin/config/route.ts       GET/PATCH platform contact number
   layout.tsx                   root layout: fonts, AuthProvider, toaster
   icon.svg                     favicon (App Router convention — platform-wide, not per-tenant)
 
@@ -51,7 +63,8 @@ components/
                  logo override — see §5)
   molecules/     ProductRow, CartItem, StockMovementRow, AlertBell
   organisms/     ProductManagementTable, ProductForm, SalesScreen,
-                 PurchaseForm, ReportsDashboard, StaffManagementTable
+                 PurchaseForm, ReportsDashboard, StaffManagementTable,
+                 LoginForm, AdminDashboard
   shells/        PublicShell, AppShell (applies per-business branding —
                  see §5), OwnerOnlyGuard
   providers/     AuthProvider (React context: firebaseUser, appUser,
@@ -69,23 +82,36 @@ lib/
   business.ts, notifications.ts    client read/write helpers, all
                                     scoped by businessId
   reports.ts              client-side aggregation for the Reports page
-  cloudinary.ts            unsigned image upload (products + business logos)
+  cloudinary.ts            unsigned image upload (products, business
+                            logos, AND admin business logos)
   color.ts                 hex color math for per-business brand theming
-  config.ts                 platform contact info (WhatsApp link, etc.)
+  config.ts                 static fallback platform contact info
+  platform-config.ts        SERVER ONLY — live contact number, Admin SDK
+                             only, no client Firestore rule at all
+  admin-auth.ts             SERVER ONLY — admin password + signed
+                             session tokens (see §11)
+  admin-businesses.ts        SERVER ONLY — business CRUD + cascade
+                             delete, used by /api/admin/businesses/*
+  admin-client.ts            client-side fetch wrappers for /api/admin/*
   format.ts, cn.ts         Naira formatting, className helper
 
 types/           one file per domain concept (Product, Sale, Purchase,
-                 StockMovement, AppUser, Business, AppNotification) —
-                 every type except AppNotification carries businessId
+                 StockMovement, AppUser, Business, AppNotification,
+                 PlatformConfig) — every business-scoped type carries
+                 businessId
 
 scripts/
   create-business.mjs      admin CLI — provisions a new business +
-                            owner account (Admin SDK) — see ADMIN.md
+                            owner account (Admin SDK) — see ADMIN.md.
+                            Same operation as /admin's "Create business"
+                            form, independently implemented; kept as a
+                            fallback that doesn't depend on the app
+                            being deployed.
 
 firestore.rules             Firestore Security Rules — paste into console
-database.rules.json          deny-all Realtime Database rules (see §6)
+database.rules.json          deny-all Realtime Database rules (see §8)
 .env.local.example           every required env var, documented inline
-proxy.ts                     UX-level route guard (see §4) — Next.js 16
+proxy.ts                     UX-level route guard (see §7) — Next.js 16
                               renamed "middleware" to "proxy"; this file
                               is the renamed equivalent
 ```
@@ -94,7 +120,7 @@ proxy.ts                     UX-level route guard (see §4) — Next.js 16
 
 ## 3. No public signup
 
-There is no `/auth/signup` route. New businesses are created exclusively by `scripts/create-business.mjs`, run by the platform admin — see [ADMIN.md](./ADMIN.md) for the full flow and [AUTHENTICATION.md](./AUTHENTICATION.md) for the reasoning. This script uses the Firebase Admin SDK directly (bypassing Firestore Security Rules, same as every route in `app/api/*`) to create the Firebase Auth owner account, the `/business/{id}` doc, and the `/users/{uid}` doc together.
+There is no `/auth/signup` route. New businesses are created, edited, and deleted exclusively through the admin panel (`/admin`) or, for creation only, the `scripts/create-business.mjs` CLI fallback — both run by the platform admin, never by the public. See [ADMIN.md](./ADMIN.md) for the full flow and [AUTHENTICATION.md](./AUTHENTICATION.md) for the reasoning. Both paths use the Firebase Admin SDK directly (bypassing Firestore Security Rules, same as every route in `app/api/*`) to create the Firebase Auth owner account, the `/business/{id}` doc, and the `/users/{uid}` doc together. See §11 for how admin access itself is authenticated — it's a completely separate system from the owner/staff model described below.
 
 ---
 
@@ -173,3 +199,18 @@ No global state library. Three layers:
 ## 10. Design system
 
 Tailwind v4 theme tokens (`app/globals.css`, `@theme` block) — Violet (`#7C3AED`) as the DEFAULT brand/primary color (overridden per-business — see §5), Slate neutrals, semantic Success/Warning/Error colors (never overridden per-tenant — status colors stay consistent everywhere). Inter for UI text, JetBrains Mono for SKUs and other identifiers. Full component list in `components/ui/`. Mobile-first: `DataTable` renders as a real `<table>` on `sm:` and up, and as stacked cards below that; the sales cart is a sticky bottom sheet on mobile and a static sidebar panel on desktop.
+
+---
+
+## 11. The admin panel — a deliberately separate auth system
+
+`/admin` lets the platform operator create, edit, and delete ANY business, and edit platform-wide settings (the public contact number). That's real cross-tenant capability — the one place in this entire app where something can see and touch every business's data. Rather than modeling this as a role inside the existing owner/staff system (which would mean teaching every Firestore rule and every tenant-scoped route about an identity with no `businessId`, and would put that capability behind the same client-side Firebase Auth flow every regular user goes through), admin auth is built as a completely independent system:
+
+- **No Firebase Auth account.** Just a single shared secret (`ADMIN_PASSWORD`), known only to you, checked server-side (`lib/admin-auth.ts`).
+- **No Firestore Security Rules involvement at all.** Every `/api/admin/*` route and every `/admin` page operation goes through the Firebase Admin SDK directly — nothing about admin capability is expressed in `firestore.rules`. (The one exception: `firestore.rules` DOES include an explicit deny-all for `/platformConfig`, purely as defense in depth — see DATABASE.md.)
+- **A stateless, self-contained signed session token**, not a database-backed session. `createAdminSessionToken()` produces `${expiresAt}.${hmacSignature}`; `verifyAdminSessionToken()` just recomputes the HMAC and checks expiry — no session store to manage, no risk of a stale session surviving a database wipe or vice versa.
+- **Real server-side verification on every request**, not just cookie-presence checking. Contrast this with `proxy.ts`'s `/dashboard/*` guard (§7), which only checks whether a cookie exists — real dashboard auth depends on the Firebase client SDK, which can't be verified synchronously in that runtime. Admin auth has no such constraint (it's just an HMAC check), so `app/admin/(protected)/layout.tsx` does the REAL check, server-side, before any admin page ever renders. This is actually a stronger guarantee than the regular dashboard gets.
+
+**Why this matters for tenant isolation:** because admin capability never touches Firestore Security Rules, adding `/admin` couldn't have introduced any new way for one business to see another's data through the normal app — the two systems don't share any code path except both ultimately calling the Firebase Admin SDK server-side (which was already true of every route in `app/api/*`, and was never something client-side rules protected against — see §4).
+
+**Cascade delete** (`lib/admin-businesses.ts` → `deleteBusinessCascade()`) is the highest-stakes operation in the whole app: it removes every product, sale, purchase, and stock movement for a business, every user's Firestore doc AND Firebase Auth account, their notifications, and finally the business doc itself — in that order, business doc last, so a failure partway through never leaves an ambiguous "is this business gone or not" state. The admin UI requires typing the business's exact name before this can be triggered.

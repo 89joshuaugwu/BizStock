@@ -1,6 +1,6 @@
-# Admin Guide — Provisioning Businesses
+# Admin Guide — Managing Businesses
 
-BizStock is multi-tenant: one deployment can serve many client businesses, each with its own isolated data and its own branding. There is no public signup — every business is created by you (the platform operator), using a CLI script.
+BizStock is multi-tenant: one deployment can serve many client businesses, each with its own isolated data and its own branding. There is no public signup — every business is created, edited, and (if needed) deleted by you, the platform operator, through the admin panel at **`/admin`**.
 
 ---
 
@@ -10,72 +10,64 @@ Earlier in this project's design, signup was open (`/auth/signup`) — anyone co
 
 - BizStock is a product you operate and support, not an open marketplace strangers self-onboard into.
 - Open signup means taking on abuse/spam prevention, support obligations to businesses you've never vetted, and security surface you don't control.
-- The actual goal — "any business that wants one, we set it up and brand it for them" — is a white-label service model, which fits an admin-provisioning flow far better than self-serve.
+- The actual goal — "any business that wants one, we set it up and brand it for them" — is a white-label service model, which fits an admin-managed flow far better than self-serve.
 
 See `AUTHENTICATION.md` for the full reasoning and how this interacts with the multi-tenant Security Rules.
 
 ---
 
-## 2. Creating a new business
+## 2. Setting up admin access
 
-From the project root, with `.env.local` filled in (the script reads the same `FIREBASE_ADMIN_*` variables the app uses):
+Two env vars in `.env.local` (see `.env.local.example`):
 
-```bash
-npm run create-business
+```
+ADMIN_PASSWORD=<a long, random value>
+ADMIN_SESSION_SECRET=<a different long, random value>
 ```
 
-This runs `scripts/create-business.mjs`, an interactive CLI. It asks for:
+Generate each with `openssl rand -hex 24` (or any equivalent). **This is deliberately NOT a Firebase Auth account** — it's a single shared password only you know, checked server-side, completely separate from the owner/staff login system every business uses. See `lib/admin-auth.ts` for the full reasoning: this keeps the entire multi-tenant Security Rules model untouched by admin capability — nothing about `/admin` ever runs through Firestore rules or the client Firebase SDK at all, which means adding admin access couldn't accidentally weaken tenant isolation for regular businesses.
 
-1. **Business name**
-2. **Owner's full name**
-3. **Owner's email**
-4. **Default reorder threshold** (optional, defaults to 10)
-5. **Brand color** as a hex code, e.g. `#7C3AED` (optional — leave blank to use BizStock's default Violet)
-6. **Logo URL** (optional — leave blank to use the default BizStock mark; the owner can also upload one later from Settings → Branding)
-
-It then:
-
-- Creates the Firebase Auth account for the owner, with a random temporary password
-- Creates the `/business/{id}` document (name, branding, default threshold, `ownerUid`)
-- Creates the `/users/{uid}` document (`role: "owner"`, `active: true`, `businessId` pointing at the new business)
-- Prints the business ID and the owner's login credentials to the terminal
-
-**Send the printed email + temporary password to the business owner.** They log in at `/auth/login` and should change their password from Settings afterward.
+Log in at `yourdeployment.com/admin/login`. The session lasts 7 days, then you'll need to log in again.
 
 ---
 
-## 3. What the owner can do after that
+## 3. Managing businesses from `/admin`
 
-Once logged in, the owner is fully self-service for their own business:
+Once logged in, you get one page with everything:
+
+**Create a business** — "Create business" button opens a form: business name, owner's name + email, default reorder threshold, optional logo + brand color. On submit, it creates the Firebase Auth owner account, the `/business/{id}` doc, and the `/users/{uid}` doc, then shows you the owner's email + a generated temporary password **once** — copy it before closing, it isn't stored anywhere retrievable afterward. Send those credentials to the business owner; they log in at `/auth/login` and should change their password from Settings.
+
+**Edit a business** — the Edit button on any business card lets you change its name, default reorder threshold, logo, brand color, and toggle the owner's account active/deactivated. Deactivating here does both things at once (disables their Firebase Auth login AND flips their Firestore `active` flag), so the app's normal deactivation UX (clear error message, forced logout if they're mid-session) kicks in properly instead of them just hitting a generic error.
+
+**Delete a business** — irreversible, and gated behind typing the business's exact name to confirm. This cascades through everything scoped to that business: every product, sale, purchase, and stock movement record, every staff and owner account (both their Firestore doc AND their Firebase Auth login), and their notifications. See `lib/admin-businesses.ts` (`deleteBusinessCascade`) for exactly what happens and in what order — the business doc itself is deleted last, so a failure partway through never leaves things in a state where the business "looks gone" while its data still exists.
+
+**Change the contact number** — the card at the top of `/admin` edits the WhatsApp number and pre-filled message shown on the public landing and login pages (`lib/config.ts` holds the static fallback; the live value lives in Firestore at `/platformConfig/main`, read/written exclusively server-side — see `lib/platform-config.ts`).
+
+---
+
+## 4. What the owner can do after you create their business
+
+Once logged in, the owner is fully self-service from there:
 
 - Add staff accounts (Staff page) — no further admin involvement needed
 - Add products, record purchases, run sales, view reports
 - Update their own branding (Settings → Branding: logo + brand color) and business info (name, default reorder threshold)
 - Change their own password
 
-You (the admin) never need to touch their data again unless they ask for help — the CLI script's job is done the moment their account exists.
+You never need to touch their data again unless they ask for help, or you need to use Edit/Delete from `/admin`.
 
 ---
 
-## 4. Branding — what's dynamic and what isn't
+## 5. Branding — what's dynamic and what isn't
 
-Once an owner sets a logo and brand color (via the script at creation time, or later from Settings), their **entire dashboard** re-themes: the header logo, the sidebar/nav highlight color, buttons, badges — anything using the Violet brand color swaps to theirs automatically (see `components/shells/AppShell.tsx` — it overrides the relevant CSS variables for that business's whole subtree, computed from their `brandColor` via `lib/color.ts`).
+Once a business has a logo and brand color set (via `/admin` at creation, via Edit later, or by the owner themselves from Settings), their **entire dashboard** re-themes: the header logo, the sidebar/nav highlight color, buttons, badges — anything using the Violet brand color swaps to theirs automatically (see `components/shells/AppShell.tsx` — it overrides the relevant CSS variables for that business's whole subtree, computed from their `brandColor` via `lib/color.ts`).
 
 **What does NOT change per business, and why:** the public landing page (`/`), the login page (`/auth/login`), and the site favicon always show BizStock's own default mark, not any individual client's branding. This is a deliberate limitation, not an oversight — all businesses currently share one domain, and there's no way to know which business a visitor represents before they've logged in (no subdomain-per-tenant routing exists in this build). If per-tenant public-facing branding (e.g. `client-name.yourdomain.com` before login) becomes something you want later, that requires adding subdomain-based tenant resolution, which is a genuinely separate, larger piece of work — flag it if you want it scoped.
 
 ---
 
-## 5. If you ever need to deactivate or remove a business
+## 6. The CLI script — still there as a fallback
 
-There's no "delete a business" flow built in (deliberately — deleting a business's data is destructive and higher-stakes than anything else in this app, and doing it safely means cascading through `products`, `sales`, `purchases`, `stockMovements`, and `notifications`, all filtered by `businessId`). To handle this today:
+`scripts/create-business.mjs` (`npm run create-business`) still works and does the same business-creation operation as the admin panel's "Create business" form, independently implemented. It's worth keeping around because it has zero dependency on the Next.js app being deployed or reachable — useful if you ever need to provision a business while the app itself is down, or want to script/automate creation. It only supports creating, not editing or deleting — use `/admin` for those.
 
-1. **Deactivate the owner's account**: Firebase Console → Authentication → find the user → Disable account. This blocks login immediately without touching any data.
-2. If you need actual deletion later (e.g. for a data-removal request), that's a script worth writing deliberately, scoped to exactly what needs to go — ask for it when the need is concrete rather than building it speculatively now.
-
----
-
-## 6. Running the script safely
-
-- The script only ever creates NEW businesses — it has no "update" or "delete" mode, so there's no risk of it accidentally modifying an existing business.
-- It validates the owner's email format and the brand color's hex format before writing anything.
-- If it fails partway through (e.g. Firestore write fails after the Auth user was already created), you'll have an orphaned Firebase Auth user with no matching `/users/{uid}` doc — check Firebase Console → Authentication if a run ever errors out, and delete that orphaned user before retrying with the same email.
+If it ever fails partway through (e.g. the Firestore write fails after the Auth user was already created), you'll have an orphaned Firebase Auth user with no matching `/users/{uid}` doc — check Firebase Console → Authentication if a run errors out, and delete that orphaned user before retrying with the same email. (The admin panel's create flow has the same theoretical failure mode, for the same reason — Auth user creation and Firestore writes aren't a single atomic operation.)

@@ -2,8 +2,12 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { Logo } from "@/components/ui/Logo";
 import { getWhatsAppLink } from "@/lib/config";
+import { getPlatformConfigServer } from "@/lib/platform-config";
 
-export function PublicShell({ children }: { children: ReactNode }) {
+export async function PublicShell({ children }: { children: ReactNode }) {
+  const config = await getPlatformConfigServer();
+  const whatsappLink = getWhatsAppLink(config.whatsappNumber, config.whatsappMessage);
+
   return (
     <div className="flex min-h-screen flex-col bg-bg">
       <header className="border-b border-border bg-white">
@@ -19,7 +23,7 @@ export function PublicShell({ children }: { children: ReactNode }) {
               Log in
             </Link>
             <Link
-              href={getWhatsAppLink()}
+              href={whatsappLink}
               target="_blank"
               rel="noopener noreferrer"
               className="flex h-10 items-center rounded-lg bg-violet px-4 text-sm font-medium text-white hover:bg-violet-dark"

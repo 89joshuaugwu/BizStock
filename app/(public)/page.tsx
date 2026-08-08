@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { Logo } from "@/components/ui/Logo";
 import { getWhatsAppLink } from "@/lib/config";
+import { getPlatformConfigServer } from "@/lib/platform-config";
 
 const features = [
   {
@@ -44,7 +45,10 @@ const features = [
   },
 ];
 
-export default function LandingPage() {
+export default async function LandingPage() {
+  const config = await getPlatformConfigServer();
+  const whatsappLink = getWhatsAppLink(config.whatsappNumber, config.whatsappMessage);
+
   return (
     <div>
       {/* Hero */}
@@ -66,7 +70,7 @@ export default function LandingPage() {
             </p>
             <div className="mt-8 flex flex-wrap items-center gap-3">
               <Link
-                href={getWhatsAppLink()}
+                href={whatsappLink}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex h-12 items-center gap-2 rounded-lg bg-violet px-6 text-sm font-semibold text-white hover:bg-violet-dark"
@@ -146,7 +150,7 @@ export default function LandingPage() {
             Message us and we&apos;ll set up your dashboard — one owner account, unlimited staff, branded to your business.
           </p>
           <Link
-            href={getWhatsAppLink()}
+            href={whatsappLink}
             target="_blank"
             rel="noopener noreferrer"
             className="mt-7 inline-flex h-12 items-center gap-2 rounded-lg bg-violet px-7 text-sm font-semibold text-white hover:bg-violet-dark"

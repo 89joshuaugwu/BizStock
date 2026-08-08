@@ -1,77 +1,13 @@
-"use client";
-
-import { Suspense, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import toast from "react-hot-toast";
 import { LogIn } from "lucide-react";
-import { Input } from "@/components/ui/Input";
-import { Button } from "@/components/ui/Button";
-import { loginWithEmail } from "@/lib/auth";
+import { LoginForm } from "@/components/organisms/LoginForm";
 import { getWhatsAppLink } from "@/lib/config";
+import { getPlatformConfigServer } from "@/lib/platform-config";
 
-const FIREBASE_ERROR_MESSAGES: Record<string, string> = {
-  "auth/invalid-credential": "Incorrect email or password.",
-  "auth/user-not-found": "Incorrect email or password.",
-  "auth/wrong-password": "Incorrect email or password.",
-  "auth/too-many-requests": "Too many attempts. Please wait a moment and try again.",
-};
+export default async function LoginPage() {
+  const config = await getPlatformConfigServer();
+  const whatsappLink = getWhatsAppLink(config.whatsappNumber, config.whatsappMessage);
 
-function friendlyError(err: unknown): string {
-  const code = (err as { code?: string })?.code;
-  if (code && FIREBASE_ERROR_MESSAGES[code]) return FIREBASE_ERROR_MESSAGES[code];
-  return err instanceof Error ? err.message : "Something went wrong. Please try again.";
-}
-
-function LoginForm() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const [loading, setLoading] = useState(false);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      await loginWithEmail(email, password);
-      toast.success("Welcome back!");
-      router.push(searchParams.get("next") || "/dashboard");
-    } catch (err) {
-      toast.error(friendlyError(err));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className="mt-8 space-y-4">
-      <Input
-        label="Email"
-        name="email"
-        type="email"
-        placeholder="you@business.com"
-        required
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-      />
-      <Input
-        label="Password"
-        name="password"
-        type="password"
-        placeholder="Your password"
-        required
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-      />
-      <Button type="submit" fullWidth size="lg" loading={loading}>
-        Log in
-      </Button>
-    </form>
-  );
-}
-
-export default function LoginPage() {
   return (
     <div className="mx-auto flex min-h-[calc(100vh-8rem)] max-w-md flex-col justify-center px-4 py-12 sm:px-6">
       <div className="mb-6 flex items-center gap-2 text-violet">
@@ -84,13 +20,11 @@ export default function LoginPage() {
         been deactivated, contact your business owner.
       </p>
 
-      <Suspense fallback={<div className="mt-8 h-56 animate-pulse rounded-lg bg-slate-100" />}>
-        <LoginForm />
-      </Suspense>
+      <LoginForm />
 
       <p className="mt-6 text-center text-sm text-text-secondary">
         Don&apos;t have an account yet?{" "}
-        <Link href={getWhatsAppLink()} target="_blank" rel="noopener noreferrer" className="font-medium text-violet hover:underline">
+        <Link href={whatsappLink} target="_blank" rel="noopener noreferrer" className="font-medium text-violet hover:underline">
           Get in touch to set up your business
         </Link>
       </p>

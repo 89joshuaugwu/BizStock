@@ -11,9 +11,22 @@ Every route in the app, who can access it, and what it does. "Both" means owner 
 | `/` | Anyone | Landing page — hero, feature grid, CTA that opens a WhatsApp chat to request setup (no self-service signup — see ADMIN.md) |
 | `/auth/login` | Anyone | Shared login for owner and staff, across all businesses |
 
-There is no public signup route. New businesses are provisioned by the platform admin via `scripts/create-business.mjs` — see [ADMIN.md](./ADMIN.md).
+There is no public signup route. New businesses are created, edited, and deleted by the platform admin via the admin panel at `/admin` (or the `scripts/create-business.mjs` CLI as a fallback for creation) — see [ADMIN.md](./ADMIN.md).
 
 A signed-out visitor hitting any `/dashboard/*` URL is redirected to `/auth/login?next=<original path>` and sent back there after logging in.
+
+---
+
+## Platform admin (separate auth system — not a business account)
+
+| Route | Access | Purpose |
+|---|---|---|
+| `/admin/login` | Anyone (password-gated) | Single shared admin password — see AUTHENTICATION.md §9 and ADMIN.md §2 |
+| `/admin` | Admin session only | Create/edit/delete businesses, toggle an owner's active status, edit the platform WhatsApp contact number |
+
+This is a deliberately separate authentication system from everything else in the app — not a Firebase Auth account, not a `role` on a `/users/{uid}` doc, no `businessId`. A valid admin session can see and manage every business, which is exactly the kind of cross-tenant capability that doesn't exist anywhere else in this app. See `lib/admin-auth.ts` and ARCHITECTURE.md §11 for why it's built this way.
+
+An unauthenticated visitor to `/admin` (any route under it except `/admin/login`) is redirected to `/admin/login` — verified server-side with a real cryptographic check (unlike the `/dashboard/*` guard, which is presence-only — see AUTHENTICATION.md §6 for the distinction).
 
 ---
 

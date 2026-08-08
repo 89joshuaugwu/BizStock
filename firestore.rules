@@ -187,5 +187,18 @@ service cloud.firestore {
                     && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["read"]);
       allow create, delete: if false;
     }
+
+    // ---- /platformConfig/{doc} -------------------------------------------
+    // Platform-wide settings editable from /admin (e.g. the WhatsApp
+    // contact number) — read and written EXCLUSIVELY server-side via the
+    // Admin SDK (lib/platform-config.ts), which bypasses these rules
+    // entirely. No legitimate code path ever needs to reach this
+    // collection through the client Firestore SDK, so it's deny-all here
+    // — defense in depth, not the actual enforcement mechanism (that's
+    // lib/admin-auth.ts's session check on every /api/admin/* route).
+
+    match /platformConfig/{document} {
+      allow read, write: if false;
+    }
   }
 }
